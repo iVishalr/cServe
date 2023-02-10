@@ -41,7 +41,7 @@ file_data *file_load(char *filename){
         if (bytes_read == -1){
             free(buffer);
             buffer = NULL;
-            return buffer;
+            return NULL;
         }
 
         bytes_remaining = bytes_remaining - bytes_read;
@@ -51,7 +51,11 @@ file_data *file_load(char *filename){
 
     buffer[total_bytes] = '\0';
 
-    assert((total_bytes + 1 == buf.st_size + 1), "Something went wrong while reading the file.");
+    // assert((total_bytes + 1 == buf.st_size + 1), "Something went wrong while reading the file.");
+    if (total_bytes + 1 == buf.st_size + 1){
+        fprintf(stderr, "Something went wrong while reading the file.\n");
+        return NULL;
+    }
 
     file_data * filedata = (file_data*)malloc(sizeof(*filedata));
 

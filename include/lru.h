@@ -24,7 +24,7 @@ typedef struct lru{
 extern cache_node *allocate_node(char *path, char *content_path, void *content, int content_length);
 extern void free_cache_node(cache_node *node);
 extern lru *lru_create(int max_size, int hashsize);
-extern void cache_free(lru *lru_cache);
+extern void destroy_cache(lru *lru_cache);
 extern void cache_put(lru *lru_cache, char *path, char *content_type, void *content, int content_length);
 extern cache_node *cache_get(lru *lru_cache, char *path);
 

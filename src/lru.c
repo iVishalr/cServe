@@ -21,7 +21,7 @@ cache_node *allocate_node(char *path, char *content_type, void *content, int con
 
 void free_cache_node(cache_node *node){
     if (node == NULL){
-        return NULL;
+        return;
     }
 
     free(node);
@@ -47,12 +47,12 @@ void insert_at_head(lru *lru_cache, cache_node *node){
 
 void move_to_head(lru *lru_cache, cache_node *node){
     if (node == NULL){
-        return NULL;
+        return;
     }
 
     // check if node is currently at head position
     if (node == lru_cache->head){
-        return NULL;
+        return;
     }
 
     // check if node is currently at tail position
@@ -89,10 +89,22 @@ lru *lru_create(int max_size, int hashsize){
     lru_cache->current_size = 0;
     lru_cache->max_size = max_size;
     lru_cache->table = hashtable_create(hashsize, NULL);
+    
+    if (lru_cache->table == NULL){
+        fprintf(stderr, "Error creating hashtable for LRU cache.\n");
+        exit(1);
+    }
+    
+    printf("%d\n",lru_cache->table->size);
+    printf("%f\n",lru_cache->table->load);
+
     return lru_cache;
 }
 
-void cache_free(lru *lru_cache){
+void destroy_cache(lru *lru_cache){
+    if (lru_cache == NULL){
+        return;
+    }
     cache_node *node = lru_cache->head;
     cache_node *next = NULL;
     while (node!=NULL){

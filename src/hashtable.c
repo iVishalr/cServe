@@ -40,10 +40,22 @@ hashtable *hashtable_create(int size, int (*hash_fn)(void *, int, int)){
     }
 
     hashtable *table = (hashtable*)malloc(sizeof(*table));
+
+    if (table == NULL){
+        fprintf(stderr, "hashtable: Error allocating memory to table.\n");
+        exit(1);
+    }
+
     table->size = size;
     table->num_entries = 0;
     table->load = 0.0f;
     table->bucket = (list**)malloc(sizeof(list*)*size);
+
+    if (table == NULL){
+        fprintf(stderr, "hashtable->bucket: Error allocating memory to table.\n");
+        exit(1);
+    }
+
     table->hash_fn = hash_fn;
 
     for (int i=0; i<size; i++){

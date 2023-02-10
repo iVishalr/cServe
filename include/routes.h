@@ -2,8 +2,8 @@
 #define _ROUTES_H_
 
 typedef struct route_node{
-    char *key;
-    char *value;
+    const char *key;
+    const char *value;
     struct route_node *left, *right;
 } route_node;
 
@@ -12,11 +12,11 @@ typedef struct route_map{
     int num_routes;
 } route_map;
 
-extern route_map *create();
-extern void *register_route(route_map *map, char *key, char *value);
-extern route_node *search(route_map *map, char *key);
-extern void *delete_route(route_map *map, char *key);
-extern void inorder_traversal(route_map *map);
-extern void destroy(route_map *map);
+extern route_map *route_create();
+extern void *register_route(route_map *map, const char *key, const char *value);
+extern route_node *route_search(route_map *map, const char *key);
+extern void *route_delete(route_map *map, const char *key);
+extern void route_inorder_traversal(route_map *map);
+extern void route_destroy(route_map *map);
 
 #endif // _ROUTES_H_

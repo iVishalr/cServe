@@ -85,6 +85,7 @@ int get_listener_socket(char *port){
     }
 
     // start listening using the socket file descriptor 
+    fprintf(stdout, "Server listening on port %s...\n", port);
     if (listen(socket_fd, NUM_PENDING_CONNECTIONS) == -1){
         perror("server: Failed to listen");
         close(socket_fd);
