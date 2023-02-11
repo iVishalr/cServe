@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include <time.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include <poll.h>
 #include "net.h"
 #include "files.h"
 #include "mime.h"
@@ -23,16 +25,19 @@
 #define DEFAULT_SERVER_FILE_PATH "./serverfiles"
 #define DEFAULT_SERVER_ROOT "./serverroot"
 
+volatile sig_atomic_t status;
+
 http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size){
     http_server *server = (http_server*)malloc(sizeof(*server));
     if (server == NULL){
         fprintf(stderr, "Error while allocating memory to server on port %d\n", port);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
-    server->server_logs = (http_server_logs*)malloc(sizeof(server->server_logs));
+    server->server_logs = (http_server_logs*)malloc(sizeof(http_server_logs));
     if (server->server_logs == NULL){
         fprintf(stderr, "Error while allocating memory to logs for server on port %d\n", port);
-        exit(1);
+        destroy_server(server, 0);       
+        exit(EXIT_FAILURE);
     }
     server->port = port;
     
@@ -43,14 +48,15 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
         server->cache = lru_create(cache_size, hashsize);
         if (server->cache == NULL){
             fprintf(stderr, "Error while creating cache for server on port %d\n", port);
-            exit(1);
+            destroy_server(server, 0);
+            exit(EXIT_FAILURE);
         }
     }
 
     server->route_table = route_create();
     if (server->route_table == NULL){
         fprintf(stderr, "Error while creating route tables for server on port %d\n", port);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     server->max_response_size = max_response_size ? max_response_size : DEFAULT_MAX_RESPONSE_SIZE;
@@ -58,7 +64,6 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
     server->server_logs->max_cache_size = cache_size;
     server->server_logs->num_bytes_sent = 0;
     server->server_logs->num_get_requests = 0;
-    server->server_logs->num_post_requests = 0;
     server->server_logs->num_requests_served = 0;
     server->server_logs->num_routes = 0;
 
@@ -75,10 +80,12 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
     server->socket_fd = get_listener_socket(port_string);
     if (server->socket_fd < 0){
         fprintf(stderr, "Error while binding to port %d\n", port);
-        exit(1);
+        destroy_server(server, 0);
+        exit(EXIT_FAILURE);
     }
     free(port_string);
     port_string = NULL;
+    status = 1;
     return server;
 }
 
@@ -87,11 +94,15 @@ void destroy_server(http_server *server, int print_logs){
         print_server_logs(server);
     
     printf("Destroying Server running on port: %d\n",server->port);
-    free(server->server_logs);
-    destroy_cache(server->cache);
-    route_destroy(server->route_table);
+    if (server->server_logs)
+        free(server->server_logs);
+    if (server->cache)
+        destroy_cache(server->cache);
+    if (server->route_table)
+        route_destroy(server->route_table);
     close(server->socket_fd);
-    free(server);
+    if (server)
+        free(server);
     server = NULL;
 }   
 
@@ -101,12 +112,14 @@ void print_server_logs(http_server *server){
     if (server->cache != NULL){
         fprintf(stdout, "Server Cache size: %d\n", server->cache->max_size);
         fprintf(stdout, "Server Cache Hashtable size: %d\n", server->cache->table->size);
-        fprintf(stdout, "Server Cache Hashtable load: %f\n", server->cache->table->load);
+        fprintf(stdout, "Server Cache Hashtable load: %.2f\n", server->cache->table->load*100);
     }
+    fprintf(stdout, "Server Directory: %s\n", server->server_root_dir);
     fprintf(stdout, "Number of Routes: %d\n", server->route_table->num_routes);
+    fprintf(stdout, "Max Request size: %ld\n", server->max_request_size);
+    fprintf(stdout, "Max Response size: %ld\n", server->max_response_size);
     fprintf(stdout, "Number of Bytes Sent: %ld\n", server->server_logs->num_bytes_sent);
     fprintf(stdout, "Number of GET Requests Received: %d\n", server->server_logs->num_get_requests);
-    fprintf(stdout, "Number of POST Requests Received: %d\n", server->server_logs->num_post_requests);
     fprintf(stdout, "Number of Requests Served: %d\n", server->server_logs->num_requests_served);
 }
 
@@ -150,12 +163,13 @@ void response_404(http_server *server, int new_socket_fd){
     );
 }
 
-void response_file(http_server *server, int new_socket_fd, const char *path){
+void file_response_handler(http_server *server, int new_socket_fd, const char *path){
     char filepath[4096];
     file_data *filedata;
     char *mime_type;
 
-    snprintf(filepath, sizeof(filepath), "%s/%s", server->server_root_dir, path);
+    snprintf(filepath, sizeof(filepath), "%s", path);
+    printf("Loading data from %s\n", filepath);
     filedata = file_load(filepath);
 
     if (filedata == NULL){
@@ -167,8 +181,6 @@ void response_file(http_server *server, int new_socket_fd, const char *path){
     }
 
     mime_type = mime_type_get(filepath);
-    char header[] = "HTTP/1.1 404 NOT FOUND";
-    char content_type[] = "text/html";
     send_http_response(server, new_socket_fd, "HTTP/1.1 200 OK", mime_type, filedata->data);
     file_free(filedata);
     filedata = NULL;
@@ -184,6 +196,7 @@ void handle_http_request(http_server *server, int new_socket_fd){
 
     if (bytes_received < 0){
         fprintf(stderr, "Did not receive any bytes in the request.\n");
+        free(request);
         return;
     }
     else{
@@ -209,23 +222,133 @@ void handle_http_request(http_server *server, int new_socket_fd){
     );
     if (pret == -1){
         fprintf(stderr, "Could not parse the headers in the request.\n");
+        free(request);
         return;
     }
-    if (bytes_received >= sizeof(request)){
-        fprintf(stderr, "Request execeeds MAX_REQUEST_SIZE=%ld bytes.\n", server->max_request_size);
-        return;
-    }
+
+    printf("%s\n", request);
 
     // now we have parsed the request obtained. 
     // determine if the path request is a registered path
     char get[] = "GET";
     char post[] = "POST";
+    
+    char *search_path = (char*)malloc(path_len + 1);
+    snprintf(search_path, path_len + 1, "%s" ,path);
+    // printf("searching for path: %.*s\n", (int)path_len, path);
+    // printf("searching for path: %s\n", search_path);
 
-    route_node *req_route = route_search(server->route_table, path);
-    if (req_route == NULL){
-        response_404(server, new_socket_fd);
+    if (strstr(search_path, ".") != NULL){
+        // if request path is a resource on server and not a route, then respond with a file
+        char resource_path[4096];
+        sprintf(resource_path, "%s/%s", server->server_root_dir, search_path);
+        file_response_handler(server, new_socket_fd, resource_path);
     }
     else{
-        response_file(server, new_socket_fd, path);
+        route_inorder_traversal(server->route_table);
+        route_node *req_route = route_search(server->route_table, search_path);
+        if (req_route == NULL){
+            fprintf(stderr, "404 Page Not found!\n");
+            response_404(server, new_socket_fd);
+        }
+        else if (req_route->value != NULL){
+            printf("Key : %s\n", req_route->key);
+            printf("value : %s\n", req_route->value);
+            char file_path[4096];
+            sprintf(file_path, "%s/%s", server->server_root_dir, req_route->value);
+            file_response_handler(server, new_socket_fd, file_path);
+        }
+        else{
+            char dir_path[4096];
+            sprintf(dir_path, "%s/%s", server->server_root_dir, req_route->route_dir);
+            req_route->route_fn(server, new_socket_fd, dir_path, req_route->fn_args);
+        }
     }
+
+    char *search_method = (char*)malloc(method_len+1);
+    snprintf(search_method, method_len + 1, "%s" ,method);
+    if (strcmp(get, search_method) == 0){
+        server->server_logs->num_get_requests += 1;
+    }else{
+        // do for post
+    }
+
+    server->server_logs->num_requests_served += 1;
+    free(search_path);
+    free(request);
+    request = NULL;
+    search_path = NULL;
+}
+
+void stop_server(){
+    status = 0;
+}
+
+void server_start(http_server *server){
+    int new_socket_fd;
+    int port = server->port;
+    struct sockaddr_storage client_addr;
+    char s[INET6_ADDRSTRLEN];
+    
+    // set the server listening socket to be non-blocking.
+    // int flags_before = fcntl(server->socket_fd, F_GETFL);
+    // if (flags_before == -1){
+    //     fprintf(stderr, "Could not obtain the flags for server listening TCP socket.\n");
+    //     destroy_server(server, 0);
+    //     exit(EXIT_FAILURE);
+    // }
+    // else{
+    //     int set_nonblocking = fcntl(server->socket_fd, F_SETFL, flags_before | O_NONBLOCK);
+    //     if (set_nonblocking == -1){
+    //         fprintf(stderr, "Could not set server TCP socket to NON_BLOCKING.\n");
+    //         destroy_server(server, 0);
+    //         exit(EXIT_FAILURE);
+    //     }
+    // }
+    
+    signal(SIGINT, stop_server);
+    
+    // fd_set set;
+    // struct timeval timeout;
+    // int rv;
+    // FD_ZERO(&set);
+    // FD_SET(server->socket_fd, &set);
+    // timeout.tv_sec = 10;
+    // timeout.tv_usec = 0;
+    
+    while(status){
+        socklen_t sin_size = sizeof(client_addr);
+        
+        new_socket_fd = accept(server->socket_fd, (struct sockaddr *)&client_addr, &sin_size);
+        if (new_socket_fd == -1){
+            if (errno == EWOULDBLOCK){
+                if (!status){
+                    break;
+                }else{
+                    continue;
+                }
+            }
+            else{
+                fprintf(stderr, "An error occured while accepting a connection.\n");
+                continue;
+            }
+        }
+
+        inet_ntop(client_addr.ss_family, get_internet_address((struct sockaddr *)&client_addr), s, sizeof(s));
+        fprintf(stdout, "Server:%d - Got connection from %s\n", port, s);
+        handle_http_request(server, new_socket_fd);
+        close(new_socket_fd);
+    }
+
+    // restore socket to be blocking
+    // if (fcntl(server->socket_fd, F_SETFL, flags_before) == -1){
+    //     fprintf(stderr, "Failed to gracefully shutdown server.\n");
+    //     destroy_server(server, 0);
+    //     exit(EXIT_FAILURE);
+    // }
+
+    fprintf(stdout, "Stopping server running on port %d...\n", port);
+    destroy_server(server, 1);
+    fprintf(stdout, "Server:%d - Stopped.\n", port);
+    exit(EXIT_SUCCESS);
 }

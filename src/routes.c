@@ -4,7 +4,7 @@
 #include "routes.h"
 
 route_map *route_create(){
-    route_map *map = (route_map*)malloc(sizeof(*map));
+    route_map *map = (route_map*)malloc(sizeof(route_map));
 
     if (map == NULL){
         return NULL;
@@ -15,8 +15,8 @@ route_map *route_create(){
     return map;
 }
 
-route_node *create_node(const char *key, const char *value){
-    route_node *node = (route_node*)malloc(sizeof(*node));
+route_node *create_node(const char *key, const char *value, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
+    route_node *node = (route_node*)malloc(sizeof(route_node));
 
     if (node == NULL){
         return NULL;
@@ -26,36 +26,38 @@ route_node *create_node(const char *key, const char *value){
     node->value = value;
     node->left = NULL;
     node->right = NULL;
+    node->route_dir = route_dir;
+    node->route_fn = route_fn;
+    node->fn_args = fn_args;
     return node;
 }
 
-route_node *register_route_handler(route_node *root, const char *key, const char *value){
+route_node *register_route_handler(route_node *root, const char *key, const char *value, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
     if (root == NULL){
-        return create_node(key, value);
+        fprintf(stdout, "Added Route - %s with value %s\n", key, value);
+        return create_node(key, value, route_dir, route_fn, fn_args);
     }
 
     if (strcmp(key, root->key) == 0){
         fprintf(stderr, "WARN: Route %s already exists! Hence ignored.\n", key);
     }
     else if (strcmp(key, root->key) < 0){
-        root->left = register_route_handler(root->left, key, value);
+        root->left = register_route_handler(root->left, key, value, route_dir, route_fn, fn_args);
     }
     else{
-        root->right = register_route_handler(root->right, key, value);
+        root->right = register_route_handler(root->right, key, value, route_dir, route_fn, fn_args);
     }
-    return NULL;
+    return root;
 }
 
-void *register_route(route_map *map, const char *key, const char *value){
+void *register_route(route_map *map, const char *key, const char *value, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
     route_node *root = map->map;
-
     if (root == NULL){
-        map->map = register_route_handler(map->map, key, value);
+        map->map = register_route_handler(root, key, value, route_dir, route_fn, fn_args);
     }
     else{
-        register_route_handler(map->map, key, value);
+        register_route_handler(root, key, value, route_dir, route_fn, fn_args);
     }
-
     map->num_routes+=1;
 }
 

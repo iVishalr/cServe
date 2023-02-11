@@ -3,12 +3,14 @@
 
 #include "lru.h"
 #include "routes.h"
+#include <signal.h>
 
+#define HEADER_OK "HTTP/1.1 200 OK"
+#define HEADER_404 "HTTP/1.1 404 NOT FOUND"
 
 typedef struct http_server_logs{
     int num_requests_served;
     int num_get_requests;
-    int num_post_requests;
     int num_routes;
     long num_bytes_sent;
     long num_bytes_received;
@@ -31,5 +33,7 @@ extern void destroy_server(http_server *server, int print_logs);
 extern void print_server_logs(http_server *server);
 extern void handle_http_request(http_server *server, int new_socket_fd);
 extern int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body);
-
+extern void file_response_handler(http_server *server, int new_socket_fd, const char *path);
+extern void server_start(http_server *server);
+extern void stop_server();
 #endif

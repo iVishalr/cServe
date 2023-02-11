@@ -8,15 +8,17 @@ file_data *file_load(char *filename){
 
     char *buffer, *ptr;
     struct stat buf;
-    int bytes_read, bytes_remaining, total_bytes = 0;
+    long int bytes_read, bytes_remaining, total_bytes = 0;
 
     // obtain the file size of the filename passed
     if (stat(filename, &buf) == -1){
+        printf("cannot load file size!\n");
         return NULL;
     }
 
     // check if the file is a regular file
     if (!(buf.st_mode & S_IFREG)){
+        printf("not a regular file!\n");
         return NULL;
     }
 
@@ -24,10 +26,12 @@ file_data *file_load(char *filename){
     FILE *fp = fopen(filename, "rb");
 
     if (fp==NULL){
+        printf("cannot open file!\n");
         return NULL;
     }
 
     bytes_remaining = buf.st_size;
+    printf("File size is : %ld\n", buf.st_size);
     ptr = buffer = (char*)malloc((bytes_remaining+1));
 
     if (buffer == NULL){
@@ -50,12 +54,6 @@ file_data *file_load(char *filename){
     }
 
     buffer[total_bytes] = '\0';
-
-    // assert((total_bytes + 1 == buf.st_size + 1), "Something went wrong while reading the file.");
-    if (total_bytes + 1 == buf.st_size + 1){
-        fprintf(stderr, "Something went wrong while reading the file.\n");
-        return NULL;
-    }
 
     file_data * filedata = (file_data*)malloc(sizeof(*filedata));
 

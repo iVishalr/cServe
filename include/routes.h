@@ -4,6 +4,9 @@
 typedef struct route_node{
     const char *key;
     const char *value;
+    const char *route_dir;
+    void (*route_fn)(void *, int, const char *, void *);
+    void *fn_args;
     struct route_node *left, *right;
 } route_node;
 
@@ -13,7 +16,7 @@ typedef struct route_map{
 } route_map;
 
 extern route_map *route_create();
-extern void *register_route(route_map *map, const char *key, const char *value);
+extern void *register_route(route_map *map, const char *key, const char *value, const char *route_dir, void (*route_fn)(void *, int, const char *, void *), void *fn_args);
 extern route_node *route_search(route_map *map, const char *key);
 extern void *route_delete(route_map *map, const char *key);
 extern void route_inorder_traversal(route_map *map);
