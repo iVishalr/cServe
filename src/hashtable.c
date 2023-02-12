@@ -7,7 +7,7 @@
 #define DEFAULT_GROW_FACTOR 2
 
 typedef struct ht_entry{
-    void *key;
+    char *key;
     int key_size;
     int hashed_key;
     void *data;
@@ -67,34 +67,44 @@ hashtable *hashtable_create(int size, int (*hash_fn)(void *, int, int)){
 
 void *hashtable_put(hashtable *table, char *key, void *data){
     return hashtable_put_bin(
-        table, key, strlen(key), data
+        table, key, data
     );
 }
 
-void *hashtable_put_bin(hashtable *table, void *key, int key_size, void *data){
+void *hashtable_put_bin(hashtable *table, char *key, void *data){
     /*
     * Hash the key passed to the function using hash_fn of hashtable
     * Index into the array of linkedlists to obtain the correct bin
     * Create a Hash Table entry structure and append it to the selected linkedlist
     * Update Hash Table count by 1
     */
-    
-    int index = table->hash_fn(key, key_size, table->size);
+    printf("KEY = %s LEN=%ld\n", key, strlen(key));
+
+    int index = table->hash_fn(key, strlen(key), table->size);
+
     list * list_ptr = table->bucket[index];
-    ht_entry * entry = (ht_entry*)malloc(sizeof(*entry));
-    entry->key = malloc(key_size);
-    memcpy(entry->key, key, key_size);
-    entry->key_size = key_size;
+
+    ht_entry * entry = (ht_entry*)malloc(sizeof(ht_entry));
+
+    entry->key = (char*)malloc(strlen(key));
+    sprintf(entry->key, "%s", key);
+    entry->key_size = strlen(key);
     entry->hashed_key = index;
     entry->data = data;
 
+    printf("*%s*\n", entry->key);
+    printf("hashtable_put_bin: key=%s hashed_key=%d\n", (char*)entry->key, entry->hashed_key);
+
     if (list_append(list_ptr, entry) == NULL){
+        printf("Error inserting to linked list.\n");
         free(entry->key);
         entry->key = NULL;
         free(entry);
         entry = NULL;
         return NULL;
     }
+
+    printf("adding entry count\n");
 
     add_entry_count(table, 1);
     return data;
@@ -115,7 +125,7 @@ void *hashtable_get(hashtable *table, char *key){
     );
 }
 
-void *hashtable_get_bin(hashtable *table, void *key, int key_size){
+void *hashtable_get_bin(hashtable *table, char *key, int key_size){
     int index = table->hash_fn(key, key_size, table->size);
     list *list_ptr = table->bucket[index];
 
@@ -141,7 +151,7 @@ void *hashtable_delete(hashtable *table, char *key){
     );
 }
 
-void *hashtable_delete_bin(hashtable *table, void *key, int key_size){
+void *hashtable_delete_bin(hashtable *table, char *key, int key_size){
     int index = table->hash_fn(key, key_size, table->size);
     list *list_ptr = table->bucket[index];
 

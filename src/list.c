@@ -16,6 +16,7 @@ node *list_create_node(void){
     node_ptr->data = NULL;
     node_ptr->next = NULL;
     node_ptr->prev = NULL;
+    return node_ptr;
 }
 
 /**!
@@ -55,23 +56,27 @@ void *list_insert(list *list_ptr, void *data){
 */
 void *list_append(list *list_ptr, void *data){
     if (list_ptr == NULL){
-        assert(0, "list_ptr is NULL. Create a list using list_create before inserting data.\n");
-        exit(1);
+        fprintf(stderr, "list_ptr is NULL. Create a list using list_create before inserting data.\n");
+        return NULL;
     }
 
     node * new_node = list_create_node();
 
-    if (new_node == NULL) return NULL;
+    if (new_node == NULL) {
+        fprintf(stderr, "Could not create new node for linkedlist.\n");
+        return NULL;
+    }
 
     new_node->data = data;
 
     if (list_ptr->tail == NULL){
+        fprintf(stdout, "Tail is NULL. Adding node to TAIL.\n");
         list_ptr->tail = new_node;
         list_ptr->head = new_node;
         list_ptr->count++;
         return data;
     }
-
+    fprintf(stdout, "Reassigning Tail to new node.\n");
     list_ptr->tail->next = new_node;
     new_node->prev = list_ptr->tail;
     list_ptr->tail = new_node;

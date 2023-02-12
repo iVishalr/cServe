@@ -3,6 +3,7 @@ server
 *.html
 static-website-example
 static
+*.py
 # Prerequisites
 *.d
 

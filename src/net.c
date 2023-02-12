@@ -28,7 +28,7 @@ void *get_internet_address(struct sockaddr *socket_addr){
  * Returns the main listening socket
  * Returns -1 or error
 */
-int get_listener_socket(char *port){
+int get_listener_socket(char *port, int backlog){
     int socket_fd; 
     struct addrinfo hints, *servinfo, *p;
     int yes = 1;
@@ -86,7 +86,7 @@ int get_listener_socket(char *port){
 
     // start listening using the socket file descriptor 
     fprintf(stdout, "Server listening on port %s...\n", port);
-    if (listen(socket_fd, NUM_PENDING_CONNECTIONS) == -1){
+    if (listen(socket_fd, backlog) == -1){
         perror("server: Failed to listen");
         close(socket_fd);
         return -4;

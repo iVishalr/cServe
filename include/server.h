@@ -26,14 +26,14 @@ typedef struct http_server{
     char *server_root_dir;
     long max_response_size;
     long max_request_size;
+    int backlog;
 } http_server;
 
-extern http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size);
+extern http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size, int backlog);
 extern void destroy_server(http_server *server, int print_logs);
 extern void print_server_logs(http_server *server);
 extern void handle_http_request(http_server *server, int new_socket_fd);
 extern int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body);
-extern void file_response_handler(http_server *server, int new_socket_fd, const char *path);
-extern void server_start(http_server *server);
-extern void stop_server();
+extern void file_response_handler(http_server *server, int new_socket_fd, char *path);
+extern void server_start(http_server *server, int close_server, int print_logs);
 #endif

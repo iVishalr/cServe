@@ -19,8 +19,10 @@ void custom_fn(void * server, int new_socket_fd, const char *path, void *args){
 }
 
 int main(){
-    http_server *server = create_server(8082, 0, 0, "static-website-example", 0, 0);
-    register_route(server->route_table, "/", "index.html", NULL, NULL, NULL);
-    server_start(server);
+    size_t method_len = 3;
+    char *methods[3] = {"GET", "POST", "DELETE"};
+    http_server *server = create_server(8082, 8,8, "static-website-example", 0, 0, 1000);
+    register_route(server->route_table, "/", "index.html", methods, method_len, NULL, NULL, NULL);
+    server_start(server, 1, 1);
     return 0;
 }

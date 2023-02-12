@@ -15,10 +15,16 @@ route_map *route_create(){
     return map;
 }
 
-route_node *create_node(const char *key, const char *value, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
+route_node *create_node(const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
     route_node *node = (route_node*)malloc(sizeof(route_node));
 
     if (node == NULL){
+        return NULL;
+    }
+
+    if (key == NULL){
+        fprintf(stderr, "key is a required argument for registering a route.\n");
+        free(node);
         return NULL;
     }
 
@@ -29,34 +35,36 @@ route_node *create_node(const char *key, const char *value, const char *route_di
     node->route_dir = route_dir;
     node->route_fn = route_fn;
     node->fn_args = fn_args;
+    node->methods = methods;
+    node->num_methods = num_methods;
     return node;
 }
 
-route_node *register_route_handler(route_node *root, const char *key, const char *value, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
+route_node *register_route_handler(route_node *root, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
     if (root == NULL){
         fprintf(stdout, "Added Route - %s with value %s\n", key, value);
-        return create_node(key, value, route_dir, route_fn, fn_args);
+        return create_node(key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
 
     if (strcmp(key, root->key) == 0){
         fprintf(stderr, "WARN: Route %s already exists! Hence ignored.\n", key);
     }
     else if (strcmp(key, root->key) < 0){
-        root->left = register_route_handler(root->left, key, value, route_dir, route_fn, fn_args);
+        root->left = register_route_handler(root->left, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
     else{
-        root->right = register_route_handler(root->right, key, value, route_dir, route_fn, fn_args);
+        root->right = register_route_handler(root->right, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
     return root;
 }
 
-void *register_route(route_map *map, const char *key, const char *value, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
+void *register_route(route_map *map, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
     route_node *root = map->map;
     if (root == NULL){
-        map->map = register_route_handler(root, key, value, route_dir, route_fn, fn_args);
+        map->map = register_route_handler(root, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
     else{
-        register_route_handler(root, key, value, route_dir, route_fn, fn_args);
+        register_route_handler(root, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
     map->num_routes+=1;
 }
@@ -135,7 +143,8 @@ void inorder_traversal_handler(route_node *root){
     }
 
     inorder_traversal_handler(root->left);
-    fprintf(stdout, "Node(key = %s, value = %s)\n",root->key, root->value);
+    // fprintf(stdout, "Node(key = %s, value = %s)\n",root->key, root->value);
+    route_node_print(root);
     inorder_traversal_handler(root->right);
 }
 
@@ -163,4 +172,30 @@ void route_destroy(route_map *map){
     map->map = NULL;
     free(map);
     map = NULL;
+}
+
+void route_node_print(route_node *node){
+    if (node == NULL){
+        return;
+    }
+    
+    if (node->key)
+        fprintf(stdout, "Key: %s\n", node->key);
+    if (node->value)
+        fprintf(stdout, "Value: %s\n", node->value);
+    for(int i=0;i<node->num_methods; i++){
+        fprintf(stdout, "Methods: %s\n", node->methods[i]);
+    }
+    if (node->route_dir)
+        fprintf(stdout, "Route Directory: %s\n", node->route_dir);
+}
+
+int route_check_method(route_node *node, char *method){
+    int return_value = 0;
+    for (int i = 0; i<node->num_methods; i++){
+        if (strcmp(node->methods[i], method) == 0){
+            return_value = 1;
+        }
+    }
+    return return_value;
 }

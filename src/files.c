@@ -31,7 +31,6 @@ file_data *file_load(char *filename){
     }
 
     bytes_remaining = buf.st_size;
-    printf("File size is : %ld\n", buf.st_size);
     ptr = buffer = (char*)malloc((bytes_remaining+1));
 
     if (buffer == NULL){
@@ -54,6 +53,7 @@ file_data *file_load(char *filename){
     }
 
     buffer[total_bytes] = '\0';
+    fclose(fp);
 
     file_data * filedata = (file_data*)malloc(sizeof(*filedata));
 

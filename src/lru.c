@@ -3,14 +3,14 @@
 #include <string.h>
 #include "lru.h"
 
-cache_node *allocate_node(char *path, char *content_type, void *content, int content_length){
-    cache_node *node = (cache_node*)malloc(sizeof(*node));
+cache_node *allocate_node(char *key, char *content_type, void *content, int content_length){
+    cache_node *node = (cache_node*)malloc(sizeof(cache_node));
 
     if (node == NULL){
         return NULL;
     }
 
-    node->path = path;
+    node->key = key;
     node->content_type = content_type;
     node->content = content;
     node->content_length = content_length;
@@ -94,10 +94,6 @@ lru *lru_create(int max_size, int hashsize){
         fprintf(stderr, "Error creating hashtable for LRU cache.\n");
         exit(1);
     }
-    
-    printf("%d\n",lru_cache->table->size);
-    printf("%f\n",lru_cache->table->load);
-
     return lru_cache;
 }
 
@@ -122,28 +118,57 @@ void destroy_cache(lru *lru_cache){
     lru_cache = NULL;
 }
 
-void cache_put(lru *lru_cache, char *path, char *content_type, void *content, int content_length){
+cache_node *cache_put(lru *lru_cache, char *key, char *content_type, void *content, int content_length){
+    if (lru_cache == NULL){
+        return NULL;
+    }
+
+    if (key == NULL){
+        fprintf(stderr, "Key is a required argument.\n");
+        return NULL;
+    }
+
+    if (content == NULL){
+        fprintf(stderr, "No data provided for key=%s. Key not added to cache.\n", key);
+        return NULL;
+    }
+    
+    printf("Creating node with key=%s, content_type=%s content_length=%d\n", key, content_type, content_length);
     // create a cache node
-    cache_node *node = allocate_node(path, content_type, content, content_length);
+    cache_node *node = allocate_node(key, content_type, content, content_length);
+    
+    if (node == NULL){
+        fprintf(stderr, "An error occured when allocating memory to cache_node.\n");
+        return NULL;
+    }
+
+    printf("Created node with key=%s, content_type=%s content_length=%d\n", key, content_type, content_length);
 
     //check if the cache is full 
     if (lru_cache->current_size == lru_cache->max_size){
+        printf("Cache is full! Flushing out old enteries.\n");
         // cache is full. Evict a node from tail of cache
         cache_node *lru_node = remove_tail(lru_cache);
         // remove the node from hashtable
-        hashtable_delete(lru_cache->table, lru_node->path);
+        hashtable_delete(lru_cache->table, lru_node->key);
         free_cache_node(lru_node);
         lru_node = NULL;
     }
+
+    printf("inserting to MRU\n");
     // add the node to MRU side of linked list
     insert_at_head(lru_cache, node);
 
+    fprintf(stdout, "[cache] Head(key=%s)\n", lru_cache->head->key);
+    
+    printf("inserting to Table\n");
     // add the node to hashtable for O(1) access to the node
-    hashtable_put(lru_cache->table, path, node);
+    hashtable_put(lru_cache->table, key, node);
+    return node;
 }
 
-cache_node *cache_get(lru *lru_cache, char *path){
-    cache_node *node = hashtable_get(lru_cache->table, path);
+cache_node *cache_get(lru *lru_cache, char *key){
+    cache_node *node = hashtable_get(lru_cache->table, key);
     if (node == NULL){
         return NULL;
     }
