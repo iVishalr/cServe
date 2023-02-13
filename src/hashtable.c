@@ -39,11 +39,11 @@ hashtable *hashtable_create(int size, int (*hash_fn)(void *, int, int)){
         hash_fn = default_hash_fn;
     }
 
-    hashtable *table = (hashtable*)malloc(sizeof(*table));
+    hashtable *table = (hashtable*)malloc(sizeof(hashtable));
 
     if (table == NULL){
         fprintf(stderr, "hashtable: Error allocating memory to table.\n");
-        exit(1);
+        return NULL;
     }
 
     table->size = size;
@@ -51,15 +51,19 @@ hashtable *hashtable_create(int size, int (*hash_fn)(void *, int, int)){
     table->load = 0.0f;
     table->bucket = (list**)malloc(sizeof(list*)*size);
 
-    if (table == NULL){
+    if (table->bucket == NULL){
         fprintf(stderr, "hashtable->bucket: Error allocating memory to table.\n");
-        exit(1);
+        return NULL;
     }
 
     table->hash_fn = hash_fn;
 
     for (int i=0; i<size; i++){
         table->bucket[i] = list_create();
+        if (table->bucket[i] == NULL){
+            fprintf(stderr, "table->bucket[%d]: Could not create linked list for this bucket.\n", i+1);
+            return NULL;
+        }
     }
 
     return table;
@@ -78,22 +82,24 @@ void *hashtable_put_bin(hashtable *table, char *key, void *data){
     * Create a Hash Table entry structure and append it to the selected linkedlist
     * Update Hash Table count by 1
     */
-    printf("KEY = %s LEN=%ld\n", key, strlen(key));
-
-    int index = table->hash_fn(key, strlen(key), table->size);
+    int key_size = strlen(key);
+    printf("KEY = %s LEN=%d\n", key, key_size);
+    int index = table->hash_fn(key, key_size, table->size);
 
     list * list_ptr = table->bucket[index];
 
     ht_entry * entry = (ht_entry*)malloc(sizeof(ht_entry));
 
-    entry->key = (char*)malloc(strlen(key));
+    entry->key = (char*)malloc(key_size*sizeof(char));
     sprintf(entry->key, "%s", key);
-    entry->key_size = strlen(key);
+    entry->key_size = key_size;
     entry->hashed_key = index;
     entry->data = data;
 
     printf("*%s*\n", entry->key);
-    printf("hashtable_put_bin: key=%s hashed_key=%d\n", (char*)entry->key, entry->hashed_key);
+    printf("hashtable_put_bin: key=%s hashed_key=%d\n", entry->key, entry->hashed_key);
+
+    printf("Num elements in the list - %d\n",list_ptr->count);
 
     if (list_append(list_ptr, entry) == NULL){
         printf("Error inserting to linked list.\n");

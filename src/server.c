@@ -44,6 +44,11 @@ int msleep(long msec){
     return res;
 }
 
+double get_time_difference(struct timespec *start, struct timespec *end){
+    double tdiff = (end->tv_sec - start->tv_sec) + 1e-9 * (end->tv_nsec - start->tv_nsec);
+    return tdiff;
+}
+
 http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size, int backlog){
     http_server *server = (http_server*)malloc(sizeof(*server));
     if (server == NULL){
@@ -155,7 +160,7 @@ void print_server_logs(http_server *server){
     fprintf(stdout, "Number of Requests Served: %d\n", server->server_logs->num_requests_served);
 }
 
-cache_node *server_cache_resource_handler(http_server *server, char *key, char *content_type, void *data){
+cache_node *server_cache_resource_handler(http_server *server, char *key, char *content_type, void *data, size_t content_length){
     if (key == NULL || data == NULL){
         return NULL;
     }
@@ -164,15 +169,15 @@ cache_node *server_cache_resource_handler(http_server *server, char *key, char *
         return NULL;
     }
 
-    cache_node *node = cache_put(server->cache, key, content_type, data, strlen(data));
+    cache_node *node = cache_put(server->cache, key, content_type, data, content_length);
     if (node == NULL){
         fprintf(stderr, "[Server:%d] An error occured while adding the resource to cache.\n", server->port);
         return NULL;
     }
 }
 
-void server_cache_resource(http_server *server, char *key, char *content_type, void *data){
-    cache_node *node = server_cache_resource_handler(server, key, content_type, data);
+void server_cache_resource(http_server *server, char *key, char *content_type, void *data, size_t content_length){
+    cache_node *node = server_cache_resource_handler(server, key, content_type, data, content_length);
     if (node == NULL){
         fprintf(stderr, "[Server:%d] An error occured while adding the resource to cache.\n", server->port);
     }
@@ -198,7 +203,7 @@ cache_node *server_cache_retreive(http_server *server, char *key){
     return server_cache_retreive_handler(server, key);
 }
 
-cache_node *server_cache_manager(http_server *server, int opcode, char *key, char *content_type, void *data){
+cache_node *server_cache_manager(http_server *server, int opcode, char *key, char *content_type, void *data, size_t content_length){
     if (server == NULL) return NULL;
     if (key == NULL){
         fprintf(stderr, "[Server:%d] A key must be provided for resource being cached!\n", server->port);
@@ -216,7 +221,7 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
             //replace with default content type
             content_type = "text/html";
         }
-        node = server_cache_resource_handler(server, key, content_type, data);
+        node = server_cache_resource_handler(server, key, content_type, data, content_length);
         break;
     case 1:
         // retreive item from cache
@@ -228,11 +233,11 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
     return node;
 }
 
-int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body){
+int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length){
     const long max_response_size = server->max_response_size;
     char *response = (char*)malloc(sizeof(char)*max_response_size);
     long response_length; 
-    long content_length = strlen(body);
+    long body_size = content_length;
     sprintf(
         response,
         "%s\n"
@@ -241,7 +246,7 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
         "Connection: close\n"
         "\n"
         "%s",
-        header, content_length, content_type, body
+        header, body_size, content_type, body
     );
     response_length = strlen(response);
     int rv = send(
@@ -264,7 +269,7 @@ void response_404(http_server *server, int new_socket_fd){
     char header[] = "HTTP/1.1 404 NOT FOUND";
     char content_type[] = "text/html";
     int bytes_sent = send_http_response(
-        server, new_socket_fd, header, content_type, body
+        server, new_socket_fd, header, content_type, body, strlen(body)
     );
 }
 
@@ -272,13 +277,30 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
     file_data *filedata;
     char *mime_type;
     int cached = 0;
-    printf("[Server:%d] Loading data from %s\n", server->port, path);
+    
     fprintf(stdout, "[Server:%d] [cache manager] retreiving key=%s from cache\n", server->port, path);
-    cache_node *node = server_cache_manager(server, 1, path, NULL, NULL);
+    cache_node *node = server_cache_manager(server, 1, path, NULL, NULL, 0);
+    
     if (node == NULL){
-        filedata = file_load(path);
+        mime_type = mime_type_get(path);
+        char *file_type = strstr(mime_type, "/");
+        file_type += 1;
+        printf("[Server:%d] Loading data from %s\n", server->port, path);
+        if (strcmp(file_type, "jpg") == 0 || strcmp(file_type, "jpeg") == 0 || strcmp(file_type, "png") == 0){
+            // filedata = read_image(path);
+            fprintf(stderr, "[Server:%d] Images not supported!.\n", server->port);
+            char body[1024];
+            sprintf(body, "Images not supported!.\n");
+            send_http_response(server, new_socket_fd, HEADER_404, "text/html", body, strlen(body));
+            return;
+        }
+        else{
+            filedata = file_load(path);
+            sleep(10);
+        }
     }
     else{
+        mime_type = node->content_type;
         filedata = (file_data*)malloc(sizeof(file_data));
         filedata->data = node->content;
         filedata->size = node->content_length;
@@ -289,20 +311,24 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
     if (filedata == NULL){
         fprintf(stderr, "[Server:%d] File %.*s not found on server!\n",server->port, (int)strlen(path) ,path);
         char body[1024];
-        sprintf(body, "[Server:%d] File %.*s not found on Server!\n",server->port, (int)strlen(path) ,path);
-        send_http_response(server, new_socket_fd, "HTTP/1.1 404 NOT FOUND", "text/html", body);
+        sprintf(body, "File %.*s not found on Server!\n",(int)strlen(path) ,path);
+        send_http_response(server, new_socket_fd, HEADER_404, "text/html", body, strlen(body));
         return;
     }
 
-    mime_type = mime_type_get(path);
-    send_http_response(server, new_socket_fd, "HTTP/1.1 200 OK", mime_type, filedata->data);
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+
+    fprintf(stdout, "[Server:%d] Sending response took %lf seconds.\n", server->port, get_time_difference(&start, &end));
     
     if (server->cache == NULL)
         file_free(filedata);
     else{
         if (!cached){
             fprintf(stdout, "[Server:%d] [cache manager] Adding key=%s to cache\n", server->port, path);
-            if (server_cache_manager(server, 0, path, mime_type, filedata->data) == NULL){
+            if (server_cache_manager(server, 0, path, mime_type, filedata->data, filedata->size) == NULL){
                 fprintf(stderr, "[Server:%d] [cache manager] An error occured while storing data in cache.\n", server->port);
                 return;
             }

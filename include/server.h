@@ -33,7 +33,7 @@ extern http_server *create_server(int port, int cache_size, int hashsize, char *
 extern void destroy_server(http_server *server, int print_logs);
 extern void print_server_logs(http_server *server);
 extern void handle_http_request(http_server *server, int new_socket_fd);
-extern int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body);
+extern int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length);
 extern void file_response_handler(http_server *server, int new_socket_fd, char *path);
 extern void server_start(http_server *server, int close_server, int print_logs);
 #endif

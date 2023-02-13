@@ -5,6 +5,12 @@
 
 list *list_create(void){
     list *list_ptr = (list*)malloc(sizeof(list));
+
+    if (list_ptr == NULL){
+        fprintf(stderr, "Failed to allocate memory while creating list.\n");
+        return NULL;
+    }
+
     list_ptr->count = 0;
     list_ptr->head = NULL;
     list_ptr->tail = NULL;
@@ -12,7 +18,15 @@ list *list_create(void){
 }
 
 node *list_create_node(void){
-    node * node_ptr = (node*)malloc(sizeof(node));
+    fprintf(stdout, "allocating memory\n");
+    node *node_ptr = (node*)malloc(sizeof(node));
+    fprintf(stdout, "allocated memory\n");
+
+    if (node_ptr == NULL){
+        fprintf(stderr, "Failed to allocate memory while creating list node.\n");
+        return NULL;
+    }
+
     node_ptr->data = NULL;
     node_ptr->next = NULL;
     node_ptr->prev = NULL;
@@ -25,14 +39,17 @@ node *list_create_node(void){
 */
 void *list_insert(list *list_ptr, void *data){
     if (list_ptr == NULL){
-        assert(0, "list_ptr is NULL. Create a list using list_create before inserting data.\n");
-        exit(1);
+        fprintf(stderr, "list_ptr is NULL. Create a list using list_create before inserting data.\n");
+        return NULL;
     }
 
     // create a new node
     node * new_node = list_create_node();
 
-    if (new_node == NULL) return NULL;
+    if (new_node == NULL){
+        fprintf(stderr, "An error occured while creating a new node in list.\n");
+        return NULL;
+    }
 
     new_node->data = data;
 
@@ -44,8 +61,8 @@ void *list_insert(list *list_ptr, void *data){
     }
 
     new_node->next = list_ptr->head;
-    list_ptr->head = new_node;
     list_ptr->head->prev = new_node;
+    list_ptr->head = new_node;
     list_ptr->count++;
     return data;
 }
@@ -60,14 +77,17 @@ void *list_append(list *list_ptr, void *data){
         return NULL;
     }
 
+    fprintf(stdout, "Creating list node.\n");
     node * new_node = list_create_node();
 
     if (new_node == NULL) {
         fprintf(stderr, "Could not create new node for linkedlist.\n");
         return NULL;
     }
+    fprintf(stdout, "Created list node.\n");
 
     new_node->data = data;
+    fprintf(stdout, "Assigned data pointers to new_node\n");
 
     if (list_ptr->tail == NULL){
         fprintf(stdout, "Tail is NULL. Adding node to TAIL.\n");

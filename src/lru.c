@@ -29,7 +29,7 @@ void free_cache_node(cache_node *node){
 }
 
 void insert_at_head(lru *lru_cache, cache_node *node){
-    if (node == NULL){
+    if (node == NULL || lru_cache == NULL){
         return;
     }
 
@@ -46,7 +46,7 @@ void insert_at_head(lru *lru_cache, cache_node *node){
 }
 
 void move_to_head(lru *lru_cache, cache_node *node){
-    if (node == NULL){
+    if (node == NULL || lru_cache == NULL){
         return;
     }
 
@@ -83,7 +83,7 @@ cache_node *remove_tail(lru *lru_cache){
 }
 
 lru *lru_create(int max_size, int hashsize){
-    lru *lru_cache = (lru*)malloc(sizeof(*lru_cache));
+    lru *lru_cache = (lru*)malloc(sizeof(lru));
     lru_cache->head = NULL;
     lru_cache->tail = NULL;
     lru_cache->current_size = 0;

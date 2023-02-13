@@ -2,6 +2,7 @@
 #include "server.h"
 #include "files.h"
 #include "mime.h"
+#include <string.h>
 
 void custom_fn(void * server, int new_socket_fd, const char *path, void *args){
     http_server *s = (http_server*)server;
@@ -11,17 +12,18 @@ void custom_fn(void * server, int new_socket_fd, const char *path, void *args){
     char *mime_type = mime_type_get(filepath);
     if (filedata != NULL && mime_type != NULL){
         send_http_response(
-            server, new_socket_fd, HEADER_OK, mime_type, filedata->data
+            server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size
         );
     }else{
-        send_http_response(server, new_socket_fd, HEADER_404, "text/html", "Resource not Found!");
+        char body[] = "Resource not Found!";
+        send_http_response(server, new_socket_fd, HEADER_404, "text/html", body, strlen(body));
     }
 }
 
 int main(){
     size_t method_len = 3;
     char *methods[3] = {"GET", "POST", "DELETE"};
-    http_server *server = create_server(8082, 8,8, "static-website-example", 0, 0, 1000);
+    http_server *server = create_server(8082, 128, 128, "static-website-example", 0, 0, 1000);
     register_route(server->route_table, "/", "index.html", methods, method_len, NULL, NULL, NULL);
     server_start(server, 1, 1);
     return 0;
