@@ -15,6 +15,8 @@ typedef struct http_server_logs{
     long num_bytes_sent;
     long num_bytes_received;
     int max_cache_size;
+    int cache_hits;
+    int cache_miss;
 } http_server_logs;
 
 typedef struct http_server{

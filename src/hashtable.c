@@ -90,7 +90,7 @@ void *hashtable_put_bin(hashtable *table, char *key, void *data){
 
     ht_entry * entry = (ht_entry*)malloc(sizeof(ht_entry));
 
-    entry->key = (char*)malloc(key_size*sizeof(char));
+    entry->key = (char*)malloc(key_size + 1);
     sprintf(entry->key, "%s", key);
     entry->key_size = key_size;
     entry->hashed_key = index;
@@ -159,15 +159,24 @@ void *hashtable_delete(hashtable *table, char *key){
 
 void *hashtable_delete_bin(hashtable *table, char *key, int key_size){
     int index = table->hash_fn(key, key_size, table->size);
+    printf("Hashed KEY=%d\n", index);
+
     list *list_ptr = table->bucket[index];
 
     ht_entry cmp_entry;
     cmp_entry.key = key;
     cmp_entry.key_size = key_size;
 
+    printf("Key=%s\n", key);
+
+    printf("Deleting the node from the selected list.\n");
+
     ht_entry *temp = list_delete(
         list_ptr, &cmp_entry, hash_entry_cmp_fn
     );
+
+    printf("Deleted\n");
+
 
     if (temp == NULL){
         return NULL;
@@ -175,6 +184,9 @@ void *hashtable_delete_bin(hashtable *table, char *key, int key_size){
     void *data = temp->data;
     free(temp);
     temp = NULL;
+    
+    printf("Subtracting count from hashtable.\n");
+
     add_entry_count(table, -1);
     return data;
 }

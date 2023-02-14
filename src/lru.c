@@ -9,8 +9,10 @@ cache_node *allocate_node(char *key, char *content_type, void *content, int cont
     if (node == NULL){
         return NULL;
     }
-
-    node->key = key;
+    
+    long key_size = strlen(key);
+    node->key = (char*)malloc(key_size+1);
+    sprintf(node->key, "%s", key);
     node->content_type = content_type;
     node->content = content;
     node->content_length = content_length;
@@ -23,7 +25,12 @@ void free_cache_node(cache_node *node){
     if (node == NULL){
         return;
     }
-
+    if (node->key){
+        free(node->key);
+    }
+    if (node->content){
+        free(node->content); // dont miss this :)
+    }
     free(node);
     node = NULL;
 }
@@ -149,9 +156,16 @@ cache_node *cache_put(lru *lru_cache, char *key, char *content_type, void *conte
         printf("Cache is full! Flushing out old enteries.\n");
         // cache is full. Evict a node from tail of cache
         cache_node *lru_node = remove_tail(lru_cache);
+        printf("Detached tail from LRU\n");
+        printf("New node key=%s\n", node->key);
+        printf("Detached node key=%s\n", lru_node->key);
         // remove the node from hashtable
+        printf("Deleteing node from hashtable.\n");
         hashtable_delete(lru_cache->table, lru_node->key);
+        printf("Freeing the detached node.\n");
         free_cache_node(lru_node);
+        printf("Freed!\n");
+
         lru_node = NULL;
     }
 
@@ -164,6 +178,7 @@ cache_node *cache_put(lru *lru_cache, char *key, char *content_type, void *conte
     printf("inserting to Table\n");
     // add the node to hashtable for O(1) access to the node
     hashtable_put(lru_cache->table, key, node);
+    cache_print(lru_cache);
     return node;
 }
 
@@ -176,4 +191,18 @@ cache_node *cache_get(lru *lru_cache, char *key){
     // move the node's position in DLL to head
     move_to_head(lru_cache, node);
     return node;
+}
+
+void cache_print(lru *lru_cache){
+    if (lru_cache == NULL){
+        return;
+    }
+
+    cache_node *node = lru_cache->head;
+    int index = 0;
+    while (node!=NULL){
+        printf("Index: %d Key=%s ContentLength=%d\n", index, node->key, node->content_length);
+        index += 1;
+        node = node->next;
+    }
 }

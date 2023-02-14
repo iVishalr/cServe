@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/sendfile.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -137,6 +138,8 @@ void print_server_logs(http_server *server){
         fprintf(stdout, "Server Cache size: %d\n", server->cache->max_size);
         fprintf(stdout, "Server Cache Hashtable size: %d\n", server->cache->table->size);
         fprintf(stdout, "Server Cache Hashtable load: %.2f\n", server->cache->table->load*100);
+        fprintf(stdout, "Server Cache #Hits: %d\n", server->server_logs->cache_hits);
+        fprintf(stdout, "Server Cache #Miss: %d\n", server->server_logs->cache_miss);
     }
     
     fprintf(stdout, "Server Directory: %s\n", server->server_root_dir);
@@ -176,14 +179,6 @@ cache_node *server_cache_resource_handler(http_server *server, char *key, char *
     }
 }
 
-void server_cache_resource(http_server *server, char *key, char *content_type, void *data, size_t content_length){
-    cache_node *node = server_cache_resource_handler(server, key, content_type, data, content_length);
-    if (node == NULL){
-        fprintf(stderr, "[Server:%d] An error occured while adding the resource to cache.\n", server->port);
-    }
-    return;
-}
-
 cache_node *server_cache_retreive_handler(http_server *server, char *key){
     if (key == NULL) return NULL;
     if (server->cache == NULL){
@@ -198,13 +193,12 @@ cache_node *server_cache_retreive_handler(http_server *server, char *key){
     return node;
 }
 
-cache_node *server_cache_retreive(http_server *server, char *key){
-    if (server == NULL) return NULL;
-    return server_cache_retreive_handler(server, key);
-}
-
 cache_node *server_cache_manager(http_server *server, int opcode, char *key, char *content_type, void *data, size_t content_length){
     if (server == NULL) return NULL;
+    if (server->cache == NULL){
+        fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
+        return NULL;
+    }
     if (key == NULL){
         fprintf(stderr, "[Server:%d] A key must be provided for resource being cached!\n", server->port);
         return NULL;
@@ -222,13 +216,34 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
             content_type = "text/html";
         }
         node = server_cache_resource_handler(server, key, content_type, data, content_length);
+        server->server_logs->cache_miss += 1;
         break;
     case 1:
         // retreive item from cache
         node = server_cache_retreive_handler(server, key);
+        if (node){
+            server->server_logs->cache_hits += 1;
+        }
         break;
     default:
         fprintf(stderr, "[Server:%d] Invalid opcode=%d", server->port, opcode);
+    }
+    return node;
+}
+
+void server_cache_resource(http_server *server, char *key, char *content_type, void *data, size_t content_length){
+    cache_node *node = server_cache_manager(server, 0, key, content_type, data, content_length);
+    if (node == NULL){
+        fprintf(stderr, "[Server:%d] An error occured while adding the resource to cache.\n", server->port);
+    }
+    return;
+}
+
+cache_node *server_cache_retreive(http_server *server, char *key){
+    cache_node *node = server_cache_manager(server, 1, key, NULL, NULL, 0);
+    if (node == NULL){
+        fprintf(stderr, "[Server:%d] An error occured while retreiving the resource from cache.\n", server->port);
+        return NULL;
     }
     return node;
 }
@@ -264,6 +279,43 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
     return rv;
 }
 
+int send_stream_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, int fd, size_t content_length){
+    const long max_response_size = server->max_response_size;
+    char *response = (char*)malloc(sizeof(char)*max_response_size);
+    long response_length; 
+    long body_size = content_length;
+    
+    sprintf(
+        response,
+        "%s\n"
+        "Content-Length: %ld\n"
+        "Content-Type: %s\n"
+        "Connection: close\n"
+        "\n",
+        header, body_size, content_type
+    );
+
+    response_length = strlen(response);
+    
+    long rv = write(
+        new_socket_fd,
+        response,
+        response_length
+    );
+
+    int loc = lseek(fd, 0, SEEK_SET);
+    long img_bytes = sendfile(new_socket_fd, fd, NULL, content_length);
+
+    if (rv < 0){
+        perror("Could not send response.");
+    }
+    // clean up response buffers
+    free(response);
+    server->server_logs->num_bytes_sent += rv + img_bytes;
+    printf("Sent %ld bytes.\n", img_bytes);
+    return rv + img_bytes;
+}
+
 void response_404(http_server *server, int new_socket_fd){
     char body[] = "<h1>404 Page Not Found</h1>";
     char header[] = "HTTP/1.1 404 NOT FOUND";
@@ -275,28 +327,25 @@ void response_404(http_server *server, int new_socket_fd){
 
 void file_response_handler(http_server *server, int new_socket_fd, char *path){
     file_data *filedata;
-    char *mime_type;
-    int cached = 0;
-    
+    char *mime_type, *file_type = NULL;
+    int cached = 0, cache_resource = 0;
+
     fprintf(stdout, "[Server:%d] [cache manager] retreiving key=%s from cache\n", server->port, path);
     cache_node *node = server_cache_manager(server, 1, path, NULL, NULL, 0);
     
     if (node == NULL){
         mime_type = mime_type_get(path);
-        char *file_type = strstr(mime_type, "/");
+        file_type = strstr(mime_type, "/");
         file_type += 1;
+        
         printf("[Server:%d] Loading data from %s\n", server->port, path);
         if (strcmp(file_type, "jpg") == 0 || strcmp(file_type, "jpeg") == 0 || strcmp(file_type, "png") == 0){
-            // filedata = read_image(path);
-            fprintf(stderr, "[Server:%d] Images not supported!.\n", server->port);
-            char body[1024];
-            sprintf(body, "Images not supported!.\n");
-            send_http_response(server, new_socket_fd, HEADER_404, "text/html", body, strlen(body));
-            return;
+            filedata = read_image(path);
         }
         else{
             filedata = file_load(path);
-            sleep(10);
+            cache_resource = 1;
+            sleep(1); // temporarily slow down reads
         }
     }
     else{
@@ -305,6 +354,9 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
         filedata->data = node->content;
         filedata->size = node->content_length;
         filedata->filename = node->key;
+        mime_type = mime_type_get(filedata->filename);
+        file_type = strstr(mime_type, "/");
+        file_type += 1;
         cached = 1;
     }
 
@@ -317,9 +369,30 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
     }
 
     struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
-    send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
-    clock_gettime(CLOCK_MONOTONIC, &end);
+    
+    if (file_type && (strcmp(file_type, "jpg") == 0 || strcmp(file_type, "jpeg") == 0 || strcmp(file_type, "png") == 0)){
+        
+        printf("File Size : %d\n", filedata->size);
+        printf("File Type : %s\n", mime_type);
+        printf("File Descriptor : %d\n", *((int*)filedata->data));
+
+        close(*((int*)filedata->data));
+
+        int fd = get_image_fd(filedata->filename);
+        if (fd < 0)
+            response_404(server, new_socket_fd);
+        
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        send_stream_http_response(server, new_socket_fd, HEADER_OK, mime_type, fd, filedata->size);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        filedata->data = NULL;
+        close(fd);
+    }
+    else{
+        clock_gettime(CLOCK_MONOTONIC, &start);
+        send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
+        clock_gettime(CLOCK_MONOTONIC, &end);
+    }
 
     fprintf(stdout, "[Server:%d] Sending response took %lf seconds.\n", server->port, get_time_difference(&start, &end));
     
@@ -328,14 +401,15 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
     else{
         if (!cached){
             fprintf(stdout, "[Server:%d] [cache manager] Adding key=%s to cache\n", server->port, path);
-            if (server_cache_manager(server, 0, path, mime_type, filedata->data, filedata->size) == NULL){
+            if ( cache_resource && 
+                server_cache_manager(server, 0, path, mime_type, filedata->data, filedata->size) == NULL
+            ){
                 fprintf(stderr, "[Server:%d] [cache manager] An error occured while storing data in cache.\n", server->port);
                 return;
             }
         }
         free(filedata); // file data is now inside the cache. Free filedata struct
     }
-    
     filedata = NULL;
     return;
 }
@@ -383,6 +457,23 @@ void handle_http_request(http_server *server, int new_socket_fd){
     char get[] = "GET";
     char post[] = "POST";
     
+
+    char *path_split = strchr(path, ' ');
+    *path_split = '\0';
+    // printf("%ld\n", strlen(path));
+    // printf("%s\n", path);
+
+    char *params_split = strchr(path, '?');
+    char *params = NULL;
+    if (params_split){
+        params = params_split+1;
+        *params_split = '\0';
+    }
+    
+    // printf("%ld\n", strlen(path));
+    // printf("%s\n", path);
+
+    path_len = strlen(path);
     char *search_path = (char*)malloc(path_len + 1);
     sprintf(search_path, "%.*s", (int)path_len, path);
 
