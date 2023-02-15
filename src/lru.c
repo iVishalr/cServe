@@ -139,8 +139,6 @@ cache_node *cache_put(lru *lru_cache, char *key, char *content_type, void *conte
         fprintf(stderr, "No data provided for key=%s. Key not added to cache.\n", key);
         return NULL;
     }
-    
-    printf("Creating node with key=%s, content_type=%s content_length=%d\n", key, content_type, content_length);
     // create a cache node
     cache_node *node = allocate_node(key, content_type, content, content_length);
     
@@ -149,36 +147,20 @@ cache_node *cache_put(lru *lru_cache, char *key, char *content_type, void *conte
         return NULL;
     }
 
-    printf("Created node with key=%s, content_type=%s content_length=%d\n", key, content_type, content_length);
-
     //check if the cache is full 
     if (lru_cache->current_size == lru_cache->max_size){
-        printf("Cache is full! Flushing out old enteries.\n");
         // cache is full. Evict a node from tail of cache
         cache_node *lru_node = remove_tail(lru_cache);
-        printf("Detached tail from LRU\n");
-        printf("New node key=%s\n", node->key);
-        printf("Detached node key=%s\n", lru_node->key);
         // remove the node from hashtable
-        printf("Deleteing node from hashtable.\n");
         hashtable_delete(lru_cache->table, lru_node->key);
-        printf("Freeing the detached node.\n");
         free_cache_node(lru_node);
-        printf("Freed!\n");
-
         lru_node = NULL;
     }
 
-    printf("inserting to MRU\n");
     // add the node to MRU side of linked list
     insert_at_head(lru_cache, node);
-
-    fprintf(stdout, "[cache] Head(key=%s)\n", lru_cache->head->key);
-    
-    printf("inserting to Table\n");
     // add the node to hashtable for O(1) access to the node
     hashtable_put(lru_cache->table, key, node);
-    cache_print(lru_cache);
     return node;
 }
 

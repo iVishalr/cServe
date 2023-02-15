@@ -253,30 +253,39 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
     char *response = (char*)malloc(sizeof(char)*max_response_size);
     long response_length; 
     long body_size = content_length;
+    
     sprintf(
         response,
         "%s\n"
         "Content-Length: %ld\n"
         "Content-Type: %s\n"
         "Connection: close\n"
-        "\n"
-        "%s",
-        header, body_size, content_type, body
+        "\n",
+        header, body_size, content_type
     );
+
     response_length = strlen(response);
-    int rv = send(
+    long rv_header = write(
         new_socket_fd,
         response,
-        response_length,
+        response_length
+    );
+
+    long rv = send(
+        new_socket_fd,
+        body,
+        content_length,
         0
     );
+
     if (rv < 0){
         perror("Could not send response.");
     }
     // clean up response buffers
     free(response);
-    server->server_logs->num_bytes_sent += (long)rv;
-    return rv;
+    response = NULL;
+    server->server_logs->num_bytes_sent += rv + rv_header;
+    return rv + rv_header;
 }
 
 int send_stream_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, int fd, size_t content_length){
@@ -311,6 +320,44 @@ int send_stream_http_response(http_server *server, int new_socket_fd, char *head
     }
     // clean up response buffers
     free(response);
+    response = NULL;
+    server->server_logs->num_bytes_sent += rv + img_bytes;
+    printf("Sent %ld bytes.\n", img_bytes);
+    return rv + img_bytes;
+}
+
+int send_image_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *data, size_t content_length){
+    const long max_response_size = server->max_response_size;
+    char *response = (char*)malloc(sizeof(char)*max_response_size);
+    long response_length, body_size;
+    body_size = content_length;
+
+    sprintf(
+        response,
+        "%s\n"
+        "Content-Length: %ld\n"
+        "Content-Type: %s\n"
+        "Connection: close\n"
+        "\n",
+        header, body_size, content_type
+    );
+
+    response_length = strlen(response);
+
+    long rv = write(
+        new_socket_fd, 
+        response,
+        response_length
+    );
+
+    long img_bytes = send(new_socket_fd, data, content_length, 0);
+
+    if (rv < 0 || img_bytes < 0){
+        perror("Could not send response.\n");
+    }
+
+    free(response);
+    response = NULL;
     server->server_logs->num_bytes_sent += rv + img_bytes;
     printf("Sent %ld bytes.\n", img_bytes);
     return rv + img_bytes;
@@ -328,7 +375,7 @@ void response_404(http_server *server, int new_socket_fd){
 void file_response_handler(http_server *server, int new_socket_fd, char *path){
     file_data *filedata;
     char *mime_type, *file_type = NULL;
-    int cached = 0, cache_resource = 0;
+    int cached = 0;
 
     fprintf(stdout, "[Server:%d] [cache manager] retreiving key=%s from cache\n", server->port, path);
     cache_node *node = server_cache_manager(server, 1, path, NULL, NULL, 0);
@@ -339,14 +386,7 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
         file_type += 1;
         
         printf("[Server:%d] Loading data from %s\n", server->port, path);
-        if (strcmp(file_type, "jpg") == 0 || strcmp(file_type, "jpeg") == 0 || strcmp(file_type, "png") == 0){
-            filedata = read_image(path);
-        }
-        else{
-            filedata = file_load(path);
-            cache_resource = 1;
-            sleep(1); // temporarily slow down reads
-        }
+        filedata = file_load(path);
     }
     else{
         mime_type = node->content_type;
@@ -369,39 +409,18 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
     }
 
     struct timespec start, end;
-    
-    if (file_type && (strcmp(file_type, "jpg") == 0 || strcmp(file_type, "jpeg") == 0 || strcmp(file_type, "png") == 0)){
-        
-        printf("File Size : %d\n", filedata->size);
-        printf("File Type : %s\n", mime_type);
-        printf("File Descriptor : %d\n", *((int*)filedata->data));
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
+    clock_gettime(CLOCK_MONOTONIC, &end);
 
-        close(*((int*)filedata->data));
-
-        int fd = get_image_fd(filedata->filename);
-        if (fd < 0)
-            response_404(server, new_socket_fd);
-        
-        clock_gettime(CLOCK_MONOTONIC, &start);
-        send_stream_http_response(server, new_socket_fd, HEADER_OK, mime_type, fd, filedata->size);
-        clock_gettime(CLOCK_MONOTONIC, &end);
-        filedata->data = NULL;
-        close(fd);
-    }
-    else{
-        clock_gettime(CLOCK_MONOTONIC, &start);
-        send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
-        clock_gettime(CLOCK_MONOTONIC, &end);
-    }
-
-    fprintf(stdout, "[Server:%d] Sending response took %lf seconds.\n", server->port, get_time_difference(&start, &end));
+    fprintf(stdout, "[Server:%d] Sending response took %lf ms.\n", server->port, get_time_difference(&start, &end) * 1000);
     
     if (server->cache == NULL)
         file_free(filedata);
     else{
         if (!cached){
             fprintf(stdout, "[Server:%d] [cache manager] Adding key=%s to cache\n", server->port, path);
-            if ( cache_resource && 
+            if ( 
                 server_cache_manager(server, 0, path, mime_type, filedata->data, filedata->size) == NULL
             ){
                 fprintf(stderr, "[Server:%d] [cache manager] An error occured while storing data in cache.\n", server->port);

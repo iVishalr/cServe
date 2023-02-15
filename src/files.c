@@ -34,6 +34,7 @@ file_data *file_load(char *filename){
     }
 
     bytes_remaining = buf.st_size;
+    long size = buf.st_size;
     buffer = (char*)malloc((bytes_remaining+1));
     ptr = buffer;
 
@@ -68,12 +69,12 @@ file_data *file_load(char *filename){
     }
 
     filedata->data = buffer;
-    filedata->size = strlen(buffer); // to account for '\0'
+    filedata->size = size;
     filedata->filename = filename;
     return filedata;
 }
 
-file_data *read_image(char *filename){
+file_data *read_image_fd(char *filename){
     if (filename == NULL){
         fprintf(stderr, "Please provide a valid filename.\n");
         return NULL;
@@ -103,7 +104,7 @@ file_data *read_image(char *filename){
     filedata->filename = filename;
     filedata->size = size;
 
-    printf("File(name=%s, file_descriptor=%d)\n", filename, fd);
+    // printf("File(name=%s, file_descriptor=%d)\n", filename, fd);
 
     return filedata;
 }
@@ -129,8 +130,8 @@ int get_image_fd(char *filename){
 //         return NULL;
 //     }
     
-//     int height, width, bpp;
-//     void *image = stbi_load(filename, &width, &height, &bpp, 3);
+//     int height, width, channels;
+//     unsigned char *image = stbi_load(filename, &width, &height, &channels, 0);
 
 //     if (image == NULL){
 //         fprintf(stderr, "Error while loading image from %s.\n", filename);
@@ -146,7 +147,7 @@ int get_image_fd(char *filename){
 
 //     filedata->data = image;
 //     filedata->filename = filename;
-//     filedata->size = strlen(image)-1;
+//     filedata->size = height * width * channels;
 //     return filedata;
 // }
 
@@ -166,15 +167,15 @@ int get_image_fd(char *filename){
 //     fseek(fp, 0L, SEEK_END);
 //     long size = ftell(fp);
 //     rewind(fp);
+
 //     long int bytes_read, bytes_remaining, total_bytes = 0;
 //     bytes_remaining = size;
-//     void *buffer = malloc((size));
+//     char *buffer = malloc((size + 1));
 //     char *ptr = buffer;
 
 //     if (buffer == NULL){
 //         return NULL;
 //     }
-//     printf("Reading file contents.\n");
     
 //     while (
 //         bytes_read = fread(ptr, 1, bytes_remaining, fp), 
@@ -191,7 +192,7 @@ int get_image_fd(char *filename){
 //         total_bytes = total_bytes + bytes_read;
 //     }
 
-//     // buffer[total_bytes] = '\0';
+//     buffer[total_bytes] = '\0';
 //     fclose(fp);
     
 //     file_data *filedata = (file_data*)malloc(sizeof(file_data));
@@ -204,7 +205,7 @@ int get_image_fd(char *filename){
 
 //     filedata->data = buffer;
 //     filedata->filename = filename;
-//     filedata->size = total_bytes;
+//     filedata->size = size;
 //     return filedata;
 // }
 

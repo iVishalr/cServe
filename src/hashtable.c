@@ -83,7 +83,7 @@ void *hashtable_put_bin(hashtable *table, char *key, void *data){
     * Update Hash Table count by 1
     */
     int key_size = strlen(key);
-    printf("KEY = %s LEN=%d\n", key, key_size);
+    // printf("KEY = %s LEN=%d\n", key, key_size);
     int index = table->hash_fn(key, key_size, table->size);
 
     list * list_ptr = table->bucket[index];
@@ -96,13 +96,13 @@ void *hashtable_put_bin(hashtable *table, char *key, void *data){
     entry->hashed_key = index;
     entry->data = data;
 
-    printf("*%s*\n", entry->key);
-    printf("hashtable_put_bin: key=%s hashed_key=%d\n", entry->key, entry->hashed_key);
+    // printf("*%s*\n", entry->key);
+    // printf("hashtable_put_bin: key=%s hashed_key=%d\n", entry->key, entry->hashed_key);
 
-    printf("Num elements in the list - %d\n",list_ptr->count);
+    // printf("Num elements in the list - %d\n",list_ptr->count);
 
     if (list_append(list_ptr, entry) == NULL){
-        printf("Error inserting to linked list.\n");
+        // printf("Error inserting to linked list.\n");
         free(entry->key);
         entry->key = NULL;
         free(entry);
@@ -110,7 +110,7 @@ void *hashtable_put_bin(hashtable *table, char *key, void *data){
         return NULL;
     }
 
-    printf("adding entry count\n");
+    // printf("adding entry count\n");
 
     add_entry_count(table, 1);
     return data;
@@ -159,7 +159,7 @@ void *hashtable_delete(hashtable *table, char *key){
 
 void *hashtable_delete_bin(hashtable *table, char *key, int key_size){
     int index = table->hash_fn(key, key_size, table->size);
-    printf("Hashed KEY=%d\n", index);
+    // printf("Hashed KEY=%d\n", index);
 
     list *list_ptr = table->bucket[index];
 
@@ -167,15 +167,15 @@ void *hashtable_delete_bin(hashtable *table, char *key, int key_size){
     cmp_entry.key = key;
     cmp_entry.key_size = key_size;
 
-    printf("Key=%s\n", key);
+    // printf("Key=%s\n", key);
 
-    printf("Deleting the node from the selected list.\n");
+    // printf("Deleting the node from the selected list.\n");
 
     ht_entry *temp = list_delete(
         list_ptr, &cmp_entry, hash_entry_cmp_fn
     );
 
-    printf("Deleted\n");
+    // printf("Deleted\n");
 
 
     if (temp == NULL){
@@ -185,7 +185,7 @@ void *hashtable_delete_bin(hashtable *table, char *key, int key_size){
     free(temp);
     temp = NULL;
     
-    printf("Subtracting count from hashtable.\n");
+    // printf("Subtracting count from hashtable.\n");
 
     add_entry_count(table, -1);
     return data;

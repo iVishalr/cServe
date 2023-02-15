@@ -18,9 +18,7 @@ list *list_create(void){
 }
 
 node *list_create_node(void){
-    fprintf(stdout, "allocating memory\n");
     node *node_ptr = (node*)malloc(sizeof(node));
-    fprintf(stdout, "allocated memory\n");
 
     if (node_ptr == NULL){
         fprintf(stderr, "Failed to allocate memory while creating list node.\n");
@@ -77,26 +75,23 @@ void *list_append(list *list_ptr, void *data){
         return NULL;
     }
 
-    fprintf(stdout, "Creating list node.\n");
     node * new_node = list_create_node();
 
     if (new_node == NULL) {
         fprintf(stderr, "Could not create new node for linkedlist.\n");
         return NULL;
     }
-    fprintf(stdout, "Created list node.\n");
 
     new_node->data = data;
-    fprintf(stdout, "Assigned data pointers to new_node\n");
+
 
     if (list_ptr->tail == NULL){
-        fprintf(stdout, "Tail is NULL. Adding node to TAIL.\n");
         list_ptr->tail = new_node;
         list_ptr->head = new_node;
         list_ptr->count++;
         return data;
     }
-    fprintf(stdout, "Reassigning Tail to new node.\n");
+
     list_ptr->tail->next = new_node;
     new_node->prev = list_ptr->tail;
     list_ptr->tail = new_node;
