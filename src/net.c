@@ -13,23 +13,27 @@
 /**
  * Function to get Internet address, either as IPv4 or IPv6
  * Helper function to make printing easier.
-*/
-void *get_internet_address(struct sockaddr *socket_addr){
-    if (socket_addr->sa_family == AF_INET){
+ */
+void *get_internet_address(struct sockaddr *socket_addr)
+{
+    if (socket_addr->sa_family == AF_INET)
+    {
         // if internet address is IPv4
-        return &(((struct sockaddr_in*)socket_addr)->sin_addr);
+        return &(((struct sockaddr_in *)socket_addr)->sin_addr);
     }
-    else{
-        return &(((struct sockaddr_in6*)socket_addr)->sin6_addr);
+    else
+    {
+        return &(((struct sockaddr_in6 *)socket_addr)->sin6_addr);
     }
 }
 
 /**
  * Returns the main listening socket
  * Returns -1 or error
-*/
-int get_listener_socket(char *port, int backlog){
-    int socket_fd; 
+ */
+int get_listener_socket(char *port, int backlog)
+{
+    int socket_fd;
     struct addrinfo hints, *servinfo, *p;
     int yes = 1;
     int rv;
@@ -40,34 +44,38 @@ int get_listener_socket(char *port, int backlog){
     hints.ai_flags = AI_PASSIVE; // use host IP
 
     rv = getaddrinfo(NULL, port, &hints, &servinfo);
-    if (rv != 0){
+    if (rv != 0)
+    {
         fprintf(stderr, "%s: %d getaddrinfo: %s\n", __FILE__, __LINE__, gai_strerror(rv));
         return -1;
     }
 
     // servinfo stores list of potential interfaces.
-    // loop through the interfaces, and set up socket on each. 
+    // loop through the interfaces, and set up socket on each.
     // Stop looping if a socket is setup successfully on any one of the interfaces
-    for (p = servinfo; p!=NULL; p=p->ai_next){
+    for (p = servinfo; p != NULL; p = p->ai_next)
+    {
         // Try to create a socket based on the current candidate interface
         socket_fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (socket_fd == -1){
+        if (socket_fd == -1)
+        {
             perror("serve: socket");
             continue;
         }
 
         // check if address is already in use
         if (
-            setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1
-        ){
+            setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+        {
             perror("setsockopt");
             close(socket_fd);
             freeaddrinfo(servinfo);
             return -2;
         }
 
-        // check if we can bind the socket to this local IP address. 
-        if ( bind(socket_fd, p->ai_addr, p->ai_addrlen) == -1 ){
+        // check if we can bind the socket to this local IP address.
+        if (bind(socket_fd, p->ai_addr, p->ai_addrlen) == -1)
+        {
             close(socket_fd);
             perror("server: bind");
             continue;
@@ -79,14 +87,16 @@ int get_listener_socket(char *port, int backlog){
 
     freeaddrinfo(servinfo);
     // check if p is NULL. Which means that we could not find any interface to setup a socket
-    if (p==NULL){
+    if (p == NULL)
+    {
         fprintf(stderr, "server: failed to find local address\n");
         return -3;
     }
 
-    // start listening using the socket file descriptor 
+    // start listening using the socket file descriptor
     fprintf(stdout, "Server listening on port %s...\n", port);
-    if (listen(socket_fd, backlog) == -1){
+    if (listen(socket_fd, backlog) == -1)
+    {
         perror("server: Failed to listen");
         close(socket_fd);
         return -4;

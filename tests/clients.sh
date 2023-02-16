@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for N in {1..50}
+for N in {1..100}
 do
     python3 tests/test.py &
 done

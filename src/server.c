@@ -14,62 +14,87 @@
 #include <sys/file.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <pthread.h>
 #include "net.h"
 #include "files.h"
 #include "mime.h"
 #include "lru.h"
 #include "server.h"
 #include "picohttpparser.h"
+#include "queues.h"
 
 #define DEFAULT_PORT "8080"
 #define DEFAULT_MAX_RESPONSE_SIZE 64 * 1024 * 1024 // 64 MB
 #define DEFAULT_SERVER_FILE_PATH "./serverfiles"
 #define DEFAULT_SERVER_ROOT "./serverroot"
 #define DEFAULT_BACKLOG 10
+#define DEFAULT_THREAD_POOL_SIZE 12
 
 volatile sig_atomic_t status;
 
 /* msleep(): Sleep for the requested number of milliseconds. */
-int msleep(long msec){
+int msleep(long msec)
+{
     struct timespec ts;
     int res;
-    if (msec < 0){
+    if (msec < 0)
+    {
         errno = EINVAL;
         return -1;
     }
     ts.tv_sec = msec / 1000;
     ts.tv_nsec = (msec % 1000) * 1000000;
-    do {
+    do
+    {
         res = nanosleep(&ts, &ts);
     } while (res && errno == EINTR);
     return res;
 }
 
-double get_time_difference(struct timespec *start, struct timespec *end){
+double get_time_difference(struct timespec *start, struct timespec *end)
+{
     double tdiff = (end->tv_sec - start->tv_sec) + 1e-9 * (end->tv_nsec - start->tv_nsec);
     return tdiff;
 }
 
-http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size, int backlog){
-    http_server *server = (http_server*)malloc(sizeof(*server));
-    if (server == NULL){
+struct thread_payload
+{
+    http_server *server;
+    int new_socket_fd;
+};
+
+struct thread_function_payload
+{
+    queues *queue;
+    void *(*fn)(void *);
+};
+
+http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size, int backlog)
+{
+    http_server *server = (http_server *)malloc(sizeof(*server));
+    if (server == NULL)
+    {
         fprintf(stderr, "Error while allocating memory to server on port %d\n", port);
         exit(EXIT_FAILURE);
     }
-    server->server_logs = (http_server_logs*)malloc(sizeof(http_server_logs));
-    if (server->server_logs == NULL){
+    server->server_logs = (http_server_logs *)malloc(sizeof(http_server_logs));
+    if (server->server_logs == NULL)
+    {
         fprintf(stderr, "Error while allocating memory to logs for server on port %d\n", port);
-        destroy_server(server, 0);       
+        destroy_server(server, 0);
         exit(EXIT_FAILURE);
     }
     server->port = port;
-    
-    if (cache_size == 0){
+
+    if (cache_size == 0)
+    {
         server->cache = NULL;
     }
-    else{
+    else
+    {
         server->cache = lru_create(cache_size, hashsize);
-        if (server->cache == NULL){
+        if (server->cache == NULL)
+        {
             fprintf(stderr, "Error while creating cache for server on port %d\n", port);
             destroy_server(server, 0);
             exit(EXIT_FAILURE);
@@ -77,7 +102,8 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
     }
 
     server->route_table = route_create();
-    if (server->route_table == NULL){
+    if (server->route_table == NULL)
+    {
         fprintf(stderr, "Error while creating route tables for server on port %d\n", port);
         exit(EXIT_FAILURE);
     }
@@ -91,18 +117,21 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
     server->server_logs->num_requests_served = 0;
     server->server_logs->num_routes = 0;
 
-    if (root_dir!=NULL){
+    if (root_dir != NULL)
+    {
         server->server_root_dir = root_dir;
     }
-    else{
+    else
+    {
         server->server_root_dir = DEFAULT_SERVER_ROOT;
     }
 
-    int port_length = snprintf( NULL, 0, "%d", port );
+    int port_length = snprintf(NULL, 0, "%d", port);
     char *port_string = malloc(port_length + 1);
     snprintf(port_string, port_length + 1, "%d", port);
     server->socket_fd = get_listener_socket(port_string, server->backlog);
-    if (server->socket_fd < 0){
+    if (server->socket_fd < 0)
+    {
         fprintf(stderr, "Error while binding to port %d\n", port);
         destroy_server(server, 0);
         exit(EXIT_FAILURE);
@@ -113,11 +142,12 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
     return server;
 }
 
-void destroy_server(http_server *server, int print_logs){
+void destroy_server(http_server *server, int print_logs)
+{
     if (print_logs)
         print_server_logs(server);
-    
-    printf("Destroying Server running on port: %d\n",server->port);
+
+    printf("Destroying Server running on port: %d\n", server->port);
     if (server->server_logs)
         free(server->server_logs);
     if (server->cache)
@@ -128,9 +158,10 @@ void destroy_server(http_server *server, int print_logs){
     if (server)
         free(server);
     server = NULL;
-}   
+}
 
-void calculate_size(long bytes, long *arr){
+void calculate_size(long bytes, long *arr)
+{
     long gbs, mbs, kbs;
     gbs = (int)(bytes / 1024 / 1024 / 1024);
     bytes -= gbs * 1024 * 1024 * 1024;
@@ -144,24 +175,26 @@ void calculate_size(long bytes, long *arr){
     arr[3] = bytes;
 }
 
-void print_server_logs(http_server *server){
+void print_server_logs(http_server *server)
+{
     fprintf(stdout, "Server Port: %d\n", server->port);
-    fprintf(stdout, "Server Cache enabled (Y/n): %c\n", server->cache == NULL? 'n' : 'Y');
-    
-    if (server->cache != NULL){
+    fprintf(stdout, "Server Cache enabled (Y/n): %c\n", server->cache == NULL ? 'n' : 'Y');
+
+    if (server->cache != NULL)
+    {
         fprintf(stdout, "Server Cache size: %d\n", server->cache->max_size);
         fprintf(stdout, "Server Cache Hashtable size: %d\n", server->cache->table->size);
-        fprintf(stdout, "Server Cache Hashtable load: %.2f\n", server->cache->table->load*100);
+        fprintf(stdout, "Server Cache Hashtable load: %.2f\n", server->cache->table->load * 100);
         fprintf(stdout, "Server Cache #Hits: %d\n", server->server_logs->cache_hits);
         fprintf(stdout, "Server Cache #Miss: %d\n", server->server_logs->cache_miss);
     }
-    
+
     fprintf(stdout, "Server Directory: %s\n", server->server_root_dir);
     fprintf(stdout, "Number of Routes: %d\n", server->route_table->num_routes);
     fprintf(stdout, "Max Request size: %ld\n", server->max_request_size);
     fprintf(stdout, "Max Response size: %ld\n", server->max_response_size);
     fprintf(stdout, "Server Backlog: %d\n", server->backlog);
-    
+
     long received_bytes[4], sent_bytes[4];
     calculate_size(server->server_logs->num_bytes_received, received_bytes);
     calculate_size(server->server_logs->num_bytes_sent, sent_bytes);
@@ -174,56 +207,71 @@ void print_server_logs(http_server *server){
     fprintf(stdout, "Number of Requests Served: %d\n", server->server_logs->num_requests_served);
 }
 
-cache_node *server_cache_resource_handler(http_server *server, char *key, char *content_type, void *data, size_t content_length){
-    if (key == NULL || data == NULL){
+cache_node *server_cache_resource_handler(http_server *server, char *key, char *content_type, void *data, size_t content_length)
+{
+    if (key == NULL || data == NULL)
+    {
         return NULL;
     }
-    if (server->cache == NULL){
+    if (server->cache == NULL)
+    {
         fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
         return NULL;
     }
 
     cache_node *node = cache_put(server->cache, key, content_type, data, content_length);
-    if (node == NULL){
+    if (node == NULL)
+    {
         fprintf(stderr, "[Server:%d] An error occured while adding the resource to cache.\n", server->port);
         return NULL;
     }
 }
 
-cache_node *server_cache_retreive_handler(http_server *server, char *key){
-    if (key == NULL) return NULL;
-    if (server->cache == NULL){
+cache_node *server_cache_retreive_handler(http_server *server, char *key)
+{
+    if (key == NULL)
+        return NULL;
+    if (server->cache == NULL)
+    {
         fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
         return NULL;
     }
     cache_node *node = cache_get(server->cache, key);
-    if (node == NULL){
+    if (node == NULL)
+    {
         fprintf(stderr, "[Server:%d] Key=%s not present in cache.\n", server->port, key);
         return NULL;
     }
     return node;
 }
 
-cache_node *server_cache_manager(http_server *server, int opcode, char *key, char *content_type, void *data, size_t content_length){
-    if (server == NULL) return NULL;
-    if (server->cache == NULL){
+cache_node *server_cache_manager(http_server *server, int opcode, char *key, char *content_type, void *data, size_t content_length)
+{
+    if (server == NULL)
+        return NULL;
+    if (server->cache == NULL)
+    {
         fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
         return NULL;
     }
-    if (key == NULL){
+    if (key == NULL)
+    {
         fprintf(stderr, "[Server:%d] A key must be provided for resource being cached!\n", server->port);
         return NULL;
     }
     cache_node *node = NULL;
-    switch (opcode){
+    switch (opcode)
+    {
     case 0:
         // add resource to cache
-        if (data == NULL){
+        if (data == NULL)
+        {
             fprintf(stderr, "[Server:%d] No data provided for key=%s. Key not added to cache.", server->port, key);
             return NULL;
         }
-        if (content_type == NULL){
-            //replace with default content type
+        if (content_type == NULL)
+        {
+            // replace with default content type
             content_type = "text/html";
         }
         node = server_cache_resource_handler(server, key, content_type, data, content_length);
@@ -232,7 +280,8 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
     case 1:
         // retreive item from cache
         node = server_cache_retreive_handler(server, key);
-        if (node){
+        if (node)
+        {
             server->server_logs->cache_hits += 1;
         }
         break;
@@ -242,29 +291,34 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
     return node;
 }
 
-void server_cache_resource(http_server *server, char *key, char *content_type, void *data, size_t content_length){
+void server_cache_resource(http_server *server, char *key, char *content_type, void *data, size_t content_length)
+{
     cache_node *node = server_cache_manager(server, 0, key, content_type, data, content_length);
-    if (node == NULL){
+    if (node == NULL)
+    {
         fprintf(stderr, "[Server:%d] An error occured while adding the resource to cache.\n", server->port);
     }
     return;
 }
 
-cache_node *server_cache_retreive(http_server *server, char *key){
+cache_node *server_cache_retreive(http_server *server, char *key)
+{
     cache_node *node = server_cache_manager(server, 1, key, NULL, NULL, 0);
-    if (node == NULL){
+    if (node == NULL)
+    {
         fprintf(stderr, "[Server:%d] An error occured while retreiving the resource from cache.\n", server->port);
         return NULL;
     }
     return node;
 }
 
-int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length){
+int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length)
+{
     const long max_response_size = server->max_response_size;
-    char *response = (char*)malloc(sizeof(char)*max_response_size);
-    long response_length; 
+    char *response = (char *)malloc(sizeof(char) * max_response_size);
+    long response_length;
     long body_size = content_length;
-    
+
     sprintf(
         response,
         "%s\n"
@@ -272,24 +326,22 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
         "Content-Type: %s\n"
         "Connection: close\n"
         "\n",
-        header, body_size, content_type
-    );
+        header, body_size, content_type);
 
     response_length = strlen(response);
     long rv_header = write(
         new_socket_fd,
         response,
-        response_length
-    );
+        response_length);
 
     long rv = send(
         new_socket_fd,
         body,
         content_length,
-        0
-    );
+        0);
 
-    if (rv < 0){
+    if (rv < 0)
+    {
         perror("Could not send response.");
     }
     // clean up response buffers
@@ -299,12 +351,13 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
     return rv + rv_header;
 }
 
-int send_stream_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, int fd, size_t content_length){
+int send_stream_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, int fd, size_t content_length)
+{
     const long max_response_size = server->max_response_size;
-    char *response = (char*)malloc(sizeof(char)*max_response_size);
-    long response_length; 
+    char *response = (char *)malloc(sizeof(char) * max_response_size);
+    long response_length;
     long body_size = content_length;
-    
+
     sprintf(
         response,
         "%s\n"
@@ -312,21 +365,20 @@ int send_stream_http_response(http_server *server, int new_socket_fd, char *head
         "Content-Type: %s\n"
         "Connection: close\n"
         "\n",
-        header, body_size, content_type
-    );
+        header, body_size, content_type);
 
     response_length = strlen(response);
-    
+
     long rv = write(
         new_socket_fd,
         response,
-        response_length
-    );
+        response_length);
 
     int loc = lseek(fd, 0, SEEK_SET);
     long img_bytes = sendfile(new_socket_fd, fd, NULL, content_length);
 
-    if (rv < 0){
+    if (rv < 0)
+    {
         perror("Could not send response.");
     }
     // clean up response buffers
@@ -337,9 +389,10 @@ int send_stream_http_response(http_server *server, int new_socket_fd, char *head
     return rv + img_bytes;
 }
 
-int send_image_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *data, size_t content_length){
+int send_image_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *data, size_t content_length)
+{
     const long max_response_size = server->max_response_size;
-    char *response = (char*)malloc(sizeof(char)*max_response_size);
+    char *response = (char *)malloc(sizeof(char) * max_response_size);
     long response_length, body_size;
     body_size = content_length;
 
@@ -350,20 +403,19 @@ int send_image_response(http_server *server, int new_socket_fd, char *header, ch
         "Content-Type: %s\n"
         "Connection: close\n"
         "\n",
-        header, body_size, content_type
-    );
+        header, body_size, content_type);
 
     response_length = strlen(response);
 
     long rv = write(
-        new_socket_fd, 
+        new_socket_fd,
         response,
-        response_length
-    );
+        response_length);
 
     long img_bytes = send(new_socket_fd, data, content_length, 0);
 
-    if (rv < 0 || img_bytes < 0){
+    if (rv < 0 || img_bytes < 0)
+    {
         perror("Could not send response.\n");
     }
 
@@ -374,34 +426,37 @@ int send_image_response(http_server *server, int new_socket_fd, char *header, ch
     return rv + img_bytes;
 }
 
-void response_404(http_server *server, int new_socket_fd){
+void response_404(http_server *server, int new_socket_fd)
+{
     char body[] = "<h1>404 Page Not Found</h1>";
     char header[] = "HTTP/1.1 404 NOT FOUND";
     char content_type[] = "text/html";
     int bytes_sent = send_http_response(
-        server, new_socket_fd, header, content_type, body, strlen(body)
-    );
+        server, new_socket_fd, header, content_type, body, strlen(body));
 }
 
-void file_response_handler(http_server *server, int new_socket_fd, char *path){
+void file_response_handler(http_server *server, int new_socket_fd, char *path)
+{
     file_data *filedata;
     char *mime_type, *file_type = NULL;
     int cached = 0;
 
     fprintf(stdout, "[Server:%d] [cache manager] retreiving key=%s from cache\n", server->port, path);
     cache_node *node = server_cache_manager(server, 1, path, NULL, NULL, 0);
-    
-    if (node == NULL){
+
+    if (node == NULL)
+    {
         mime_type = mime_type_get(path);
         file_type = strstr(mime_type, "/");
         file_type += 1;
-        
+
         printf("[Server:%d] Loading data from %s\n", server->port, path);
         filedata = file_load(path);
     }
-    else{
+    else
+    {
         mime_type = node->content_type;
-        filedata = (file_data*)malloc(sizeof(file_data));
+        filedata = (file_data *)malloc(sizeof(file_data));
         filedata->data = node->content;
         filedata->size = node->content_length;
         filedata->filename = node->key;
@@ -411,24 +466,27 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
         cached = 1;
     }
 
-    if (filedata == NULL){
-        fprintf(stderr, "[Server:%d] File %.*s not found on server!\n",server->port, (int)strlen(path) ,path);
+    if (filedata == NULL)
+    {
+        fprintf(stderr, "[Server:%d] File %.*s not found on server!\n", server->port, (int)strlen(path), path);
         char body[1024];
-        sprintf(body, "File %.*s not found on Server!\n",(int)strlen(path) ,path);
+        sprintf(body, "File %.*s not found on Server!\n", (int)strlen(path), path);
         send_http_response(server, new_socket_fd, HEADER_404, "text/html", body, strlen(body));
         return;
     }
 
     send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
-    
+
     if (server->cache == NULL)
         file_free(filedata);
-    else{
-        if (!cached){
+    else
+    {
+        if (!cached)
+        {
             fprintf(stdout, "[Server:%d] [cache manager] Adding key=%s to cache\n", server->port, path);
-            if ( 
-                server_cache_manager(server, 0, path, mime_type, filedata->data, filedata->size) == NULL
-            ){
+            if (
+                server_cache_manager(server, 0, path, mime_type, filedata->data, filedata->size) == NULL)
+            {
                 fprintf(stderr, "[Server:%d] [cache manager] An error occured while storing data in cache.\n", server->port);
                 return;
             }
@@ -439,38 +497,50 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
     return;
 }
 
-void handle_http_request(http_server *server, int new_socket_fd){
-    struct timespec 
-        req_parse_start, 
+void *handle_http_request(void *arg)
+{
+    struct thread_payload *payload = (struct thread_payload *)arg;
+    http_server *server = payload->server;
+    int new_socket_fd = payload->new_socket_fd;
+    struct timespec
+        req_parse_start,
         req_parse_end,
         search_start,
         search_end,
         res_start,
-        res_end
-    ;
+        res_end;
+
     const long request_buffer_size = server->max_request_size;
-    char *request = (char*)malloc(request_buffer_size);
+    char *request = (char *)malloc(request_buffer_size);
     char *p;
+
+    free(payload);
+    payload = NULL;
+
+    printf("receiving request\n");
 
     int bytes_received = recv(new_socket_fd, request, request_buffer_size - 1, 0);
 
-    if (bytes_received < 0){
+    if (bytes_received < 0)
+    {
         fprintf(stderr, "[Server:%d] Did not receive any bytes in the request.\n", server->port);
         free(request);
-        return;
+        return NULL;
     }
-    else{
+    else
+    {
         server->server_logs->num_bytes_received += bytes_received;
     }
 
     request[bytes_received] = '\0';
     clock_gettime(CLOCK_MONOTONIC, &req_parse_start);
     char *request_body = strstr(request, "\r\n\r\n");
-    
-    if (request_body != NULL){
+
+    if (request_body != NULL)
+    {
         request_body += 4; // shift ptr by 4
     }
-    
+
     const char *method, *path;
     int pret, minor_version;
     struct phr_header headers[100];
@@ -478,43 +548,47 @@ void handle_http_request(http_server *server, int new_socket_fd){
 
     num_headers = sizeof(headers) / sizeof(headers[0]);
     pret = phr_parse_request(
-        request, bytes_received, &method, &method_len, &path, &path_len, 
-        &minor_version, headers, &num_headers, 0
-    );
-    if (pret == -1){
+        request, bytes_received, &method, &method_len, &path, &path_len,
+        &minor_version, headers, &num_headers, 0);
+
+    if (pret == -1)
+    {
         fprintf(stderr, "[Server:%d] Could not parse the headers in the request.\n", server->port);
         free(request);
-        return;
+        return NULL;
     }
-    // now we have parsed the request obtained. 
+    // now we have parsed the request obtained.
     // determine if the path request is a registered path
     char get[] = "GET";
     char post[] = "POST";
-    
+
     char *path_split = strchr(path, ' ');
     *path_split = '\0';
 
     char *params_split = strchr(path, '?');
     char *params = NULL;
-    if (params_split){
-        params = params_split+1;
+    if (params_split)
+    {
+        params = params_split + 1;
         *params_split = '\0';
     }
 
     path_len = strlen(path);
-    char *search_path = (char*)malloc(path_len + 1);
+    char *search_path = (char *)malloc(path_len + 1);
     sprintf(search_path, "%.*s", (int)path_len, path);
 
-    char *search_method = (char*)malloc(method_len+1);
-    snprintf(search_method, method_len + 1, "%s" ,method);
-    
-    if (strcmp(get, search_method) == 0){
+    char *search_method = (char *)malloc(method_len + 1);
+    snprintf(search_method, method_len + 1, "%s", method);
+
+    if (strcmp(get, search_method) == 0)
+    {
         server->server_logs->num_get_requests += 1;
     }
 
     clock_gettime(CLOCK_MONOTONIC, &req_parse_end); // request parsing completed.
 
-    if (strstr(search_path, ".") != NULL){
+    if (strstr(search_path, ".") != NULL)
+    {
         clock_gettime(CLOCK_MONOTONIC, &search_start);
         clock_gettime(CLOCK_MONOTONIC, &search_end);
 
@@ -525,24 +599,28 @@ void handle_http_request(http_server *server, int new_socket_fd){
         file_response_handler(server, new_socket_fd, resource_path);
         clock_gettime(CLOCK_MONOTONIC, &res_end);
     }
-    else{
+    else
+    {
         clock_gettime(CLOCK_MONOTONIC, &search_start);
         route_node *req_route = route_search(server->route_table, search_path);
         clock_gettime(CLOCK_MONOTONIC, &search_end);
-        if (req_route == NULL || !route_check_method(req_route, search_method)){
+        if (req_route == NULL || !route_check_method(req_route, search_method))
+        {
             fprintf(stderr, "[Server:%d] 404 Page Not found!\n", server->port);
             clock_gettime(CLOCK_MONOTONIC, &res_start);
             response_404(server, new_socket_fd);
             clock_gettime(CLOCK_MONOTONIC, &res_end);
         }
-        else if (req_route->value != NULL){
+        else if (req_route->value != NULL)
+        {
             char file_path[4096];
             sprintf(file_path, "%s/%s", server->server_root_dir, req_route->value);
             clock_gettime(CLOCK_MONOTONIC, &res_start);
             file_response_handler(server, new_socket_fd, file_path);
             clock_gettime(CLOCK_MONOTONIC, &res_end);
         }
-        else{
+        else
+        {
             char dir_path[4096];
             sprintf(dir_path, "%s/%s", server->server_root_dir, req_route->route_dir);
             clock_gettime(CLOCK_MONOTONIC, &res_start);
@@ -552,6 +630,7 @@ void handle_http_request(http_server *server, int new_socket_fd){
     }
 
     server->server_logs->num_requests_served += 1;
+    close(new_socket_fd);
     free(search_path);
     free(request);
     free(search_method);
@@ -562,54 +641,100 @@ void handle_http_request(http_server *server, int new_socket_fd){
     double search_time = get_time_difference(&search_start, &search_end) * 1000;
     double response_time = get_time_difference(&res_start, &res_end) * 1000;
     fprintf(stdout, "[Server:%d] Request Parsing: %lfms; Method Search: %lfms; Response: %lfms; Total Time: %lfms\n",
-        server->port, request_time, search_time, response_time, request_time+search_time+response_time
-    );
-    return;
+            server->port, request_time, search_time, response_time, request_time + search_time + response_time);
+    return NULL;
 }
 
-void stop_server(){
+void stop_server()
+{
     status = 0;
 }
 
-void server_start(http_server *server, int close_server, int print_logs){
+void *thread_function_wrapper(void *arg)
+{
+    struct thread_function_payload *payload = (struct thread_function_payload *)arg;
+    queues *queue = payload->queue;
+    struct thread_payload *client_payload = NULL;
+    while (status)
+    {
+        pthread_mutex_lock(&queue->mutex);
+        client_payload = (struct thread_payload *)dequeue(queue);
+        pthread_mutex_unlock(&queue->mutex);
+        if (client_payload != NULL)
+        {
+            // we have a connection queued.
+            payload->fn(client_payload);
+        }
+        else
+        {
+            msleep(0.5);
+        }
+    }
+}
+
+void server_start(http_server *server, int close_server, int print_logs)
+{
     int new_socket_fd;
     int port = server->port;
     struct sockaddr_storage client_addr;
     char s[INET6_ADDRSTRLEN];
-    
+
     // set the server listening socket to be non-blocking.
     int flags_before = fcntl(server->socket_fd, F_GETFL);
-    if (flags_before == -1){
+    if (flags_before == -1)
+    {
         fprintf(stderr, "[Server:%d] Could not obtain the flags for server listening TCP socket.\n", server->port);
         destroy_server(server, 0);
         exit(EXIT_FAILURE);
     }
-    else{
+    else
+    {
         int set_nonblocking = fcntl(server->socket_fd, F_SETFL, flags_before | O_NONBLOCK);
-        if (set_nonblocking == -1){
+        if (set_nonblocking == -1)
+        {
             fprintf(stderr, "[Server:%d] Could not set server TCP socket to NON_BLOCKING.\n", server->port);
             destroy_server(server, 0);
             exit(EXIT_FAILURE);
         }
     }
-    
+
     signal(SIGINT, stop_server);
-    
-    while(status){
+
+    // setup lock-less queue for storing incoming connections
+    queues *queue = queue_create();
+
+    // create the default thread_function_payload arg
+    struct thread_function_payload *fn_payload = (struct thread_function_payload *)malloc(sizeof(struct thread_function_payload));
+    fn_payload->fn = handle_http_request;
+    fn_payload->queue = queue;
+    // setup thread pool using the DEFAULT_THREAD_POOL_SIZE
+    pthread_t thread_pool[DEFAULT_THREAD_POOL_SIZE];
+    for (int i = 0; i < DEFAULT_THREAD_POOL_SIZE; i++)
+    {
+        pthread_create(&thread_pool[i], NULL, thread_function_wrapper, fn_payload);
+    }
+
+    while (status)
+    {
         socklen_t sin_size = sizeof(client_addr);
-        
+
         new_socket_fd = accept(server->socket_fd, (struct sockaddr *)&client_addr, &sin_size);
-        if (new_socket_fd == -1){
-            if (errno == EWOULDBLOCK){
-                if (!status){
+        if (new_socket_fd == -1)
+        {
+            if (errno == EWOULDBLOCK)
+            {
+                if (!status)
+                {
                     break;
                 }
-                else{
+                else
+                {
                     msleep(1);
                     continue;
                 }
             }
-            else{
+            else
+            {
                 fprintf(stderr, "[Server:%d] An error occured while accepting a connection.\n", server->port);
                 continue;
             }
@@ -617,18 +742,46 @@ void server_start(http_server *server, int close_server, int print_logs){
 
         inet_ntop(client_addr.ss_family, get_internet_address((struct sockaddr *)&client_addr), s, sizeof(s));
         fprintf(stdout, "[Server:%d] Got connection from %s\n", port, s);
-        handle_http_request(server, new_socket_fd);
-        close(new_socket_fd);
+
+        // create thread to handle the new request
+        // handle_http_request(server, new_socket_fd);
+        struct thread_payload *payload = (struct thread_payload *)malloc(sizeof(struct thread_payload));
+        payload->new_socket_fd = new_socket_fd;
+        payload->server = server;
+
+        // enqueue the new connection to the shared queue
+        printf("Enqueing new connection\n");
+        pthread_mutex_lock(&queue->mutex);
+        enqueue(queue, payload);
+        printf("Enqueued! Current QUEUE SIZE=%d\n", queue->size);
+        pthread_mutex_unlock(&queue->mutex);
+        // pthread_t thread;
+        // pthread_create(&thread, NULL, handle_http_request, payload);
+        // payload = NULL; // payload gets freed in handle_http_request
     }
 
+    // wait on all threads to complete before stopping.
+    for (int i = 0; i < DEFAULT_THREAD_POOL_SIZE; i++)
+    {
+        pthread_join(thread_pool[i], NULL);
+    }
+
+    // destroy queue and fn_payload
+    free(fn_payload);
+    fn_payload = NULL;
+    queue_destroy(queue);
+    queue = NULL;
+
     // restore socket to be blocking
-    if (fcntl(server->socket_fd, F_SETFL, flags_before) == -1){
+    if (fcntl(server->socket_fd, F_SETFL, flags_before) == -1)
+    {
         fprintf(stderr, "[Server:%d] Failed to gracefully shutdown server. Force Shutdown.\n", server->port);
         destroy_server(server, print_logs);
         exit(EXIT_FAILURE);
     }
 
-    if (close_server){
+    if (close_server)
+    {
         fprintf(stdout, "[Server:%d] Stopping server...\n", port);
         destroy_server(server, print_logs);
         fprintf(stdout, "[Server:%d] Stopped.\n", port);

@@ -1,11 +1,11 @@
 CC=gcc
-CFLAGS=-O2 -I include/ -lm
+CFLAGS=-O2 -I include/
 
 SRC=src
 BUILD=build
 SRCS=$(wildcard $(SRC)/*.c)
 OBJS=$(patsubst $(SRC)/%.c, $(BUILD)/%.o, $(SRCS))
-LDFLAGS=-lm
+LDFLAGS=-lm -lpthread
 
 all:
 	@if ! test -d $(BUILD); \

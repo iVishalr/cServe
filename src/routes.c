@@ -3,10 +3,12 @@
 #include <string.h>
 #include "routes.h"
 
-route_map *route_create(){
-    route_map *map = (route_map*)malloc(sizeof(route_map));
+route_map *route_create()
+{
+    route_map *map = (route_map *)malloc(sizeof(route_map));
 
-    if (map == NULL){
+    if (map == NULL)
+    {
         return NULL;
     }
 
@@ -15,14 +17,17 @@ route_map *route_create(){
     return map;
 }
 
-route_node *create_node(const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
-    route_node *node = (route_node*)malloc(sizeof(route_node));
+route_node *create_node(const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args)
+{
+    route_node *node = (route_node *)malloc(sizeof(route_node));
 
-    if (node == NULL){
+    if (node == NULL)
+    {
         return NULL;
     }
 
-    if (key == NULL){
+    if (key == NULL)
+    {
         fprintf(stderr, "key is a required argument for registering a route.\n");
         free(node);
         return NULL;
@@ -40,96 +45,121 @@ route_node *create_node(const char *key, const char *value, char **methods, size
     return node;
 }
 
-route_node *register_route_handler(route_node *root, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
-    if (root == NULL){
+route_node *register_route_handler(route_node *root, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args)
+{
+    if (root == NULL)
+    {
         fprintf(stdout, "Added Route - %s with value %s\n", key, value);
         return create_node(key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
 
-    if (strcmp(key, root->key) == 0){
+    if (strcmp(key, root->key) == 0)
+    {
         fprintf(stderr, "WARN: Route %s already exists! Hence ignored.\n", key);
     }
-    else if (strcmp(key, root->key) < 0){
+    else if (strcmp(key, root->key) < 0)
+    {
         root->left = register_route_handler(root->left, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
-    else{
+    else
+    {
         root->right = register_route_handler(root->right, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
     return root;
 }
 
-void *register_route(route_map *map, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args){
+void *register_route(route_map *map, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args)
+{
     route_node *root = map->map;
-    if (root == NULL){
+    if (root == NULL)
+    {
         map->map = register_route_handler(root, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
-    else{
+    else
+    {
         register_route_handler(root, key, value, methods, num_methods, route_dir, route_fn, fn_args);
     }
-    map->num_routes+=1;
+    map->num_routes += 1;
 }
 
-route_node *search_handler(route_node *root, const char *key){
-    if (root == NULL){
+route_node *search_handler(route_node *root, const char *key)
+{
+    if (root == NULL)
+    {
         return NULL;
     }
 
-    if (strcmp(key, root->key)==0){
+    if (strcmp(key, root->key) == 0)
+    {
         return root;
     }
-    else if (strcmp(key, root->key)<0){
+    else if (strcmp(key, root->key) < 0)
+    {
         return search_handler(root->left, key);
     }
-    else{
+    else
+    {
         return search_handler(root->right, key);
     }
 }
 
-route_node *route_search(route_map *map, const char *key){
+route_node *route_search(route_map *map, const char *key)
+{
     return search_handler(map->map, key);
 }
 
 /*
  * Removes the node from bst
  * Cannot delete root node
-*/
-route_node *delete_handler(route_node *node, route_node *parent, const char *key){
-    int diff = strcmp(key,node->key);
-    if (node == NULL || (diff == 0 && parent == NULL)){
+ */
+route_node *delete_handler(route_node *node, route_node *parent, const char *key)
+{
+    int diff = strcmp(key, node->key);
+    if (node == NULL || (diff == 0 && parent == NULL))
+    {
         return NULL;
     }
 
-    if (diff == 0){
+    if (diff == 0)
+    {
         // found the node to delete
-        // cleanup parent and return node 
-        if (node == parent->left){
+        // cleanup parent and return node
+        if (node == parent->left)
+        {
             parent->left = NULL;
         }
-        else{
+        else
+        {
             parent->right = NULL;
         }
         return node;
     }
-    else if (diff < 0){
+    else if (diff < 0)
+    {
         return delete_handler(node->left, node, key);
     }
-    else{
+    else
+    {
         return delete_handler(node->right, node, key);
     }
     return NULL;
 }
 
-void free_route_node(route_node *node){
+void free_route_node(route_node *node)
+{
     free(node);
     node = NULL;
 }
 
-void *route_delete(route_map *map, const char *key){
+void *route_delete(route_map *map, const char *key)
+{
     route_node *delNode = delete_handler(map->map, NULL, key);
-    if (delNode == NULL){
+    if (delNode == NULL)
+    {
         fprintf(stderr, "Could not delete route %s. Either route \'%s\' is not found or you are deleting the root of route_map.\n", key, key);
     }
-    else{
+    else
+    {
         free_route_node(delNode);
         delNode = NULL;
     }
@@ -137,8 +167,10 @@ void *route_delete(route_map *map, const char *key){
     return NULL;
 }
 
-void inorder_traversal_handler(route_node *root){
-    if (root == NULL){
+void inorder_traversal_handler(route_node *root)
+{
+    if (root == NULL)
+    {
         return;
     }
 
@@ -148,16 +180,20 @@ void inorder_traversal_handler(route_node *root){
     inorder_traversal_handler(root->right);
 }
 
-void route_inorder_traversal(route_map *map){
-    if (map->map == NULL){
+void route_inorder_traversal(route_map *map)
+{
+    if (map->map == NULL)
+    {
         fprintf(stdout, "No routes to display.\n");
         return;
     }
     inorder_traversal_handler(map->map);
 }
 
-void destroy_route_handler(route_node *root){
-    if (root == NULL){
+void destroy_route_handler(route_node *root)
+{
+    if (root == NULL)
+    {
         return;
     }
 
@@ -167,33 +203,40 @@ void destroy_route_handler(route_node *root){
     root = NULL;
 }
 
-void route_destroy(route_map *map){
+void route_destroy(route_map *map)
+{
     destroy_route_handler(map->map);
     map->map = NULL;
     free(map);
     map = NULL;
 }
 
-void route_node_print(route_node *node){
-    if (node == NULL){
+void route_node_print(route_node *node)
+{
+    if (node == NULL)
+    {
         return;
     }
-    
+
     if (node->key)
         fprintf(stdout, "Key: %s\n", node->key);
     if (node->value)
         fprintf(stdout, "Value: %s\n", node->value);
-    for(int i=0;i<node->num_methods; i++){
+    for (int i = 0; i < node->num_methods; i++)
+    {
         fprintf(stdout, "Methods: %s\n", node->methods[i]);
     }
     if (node->route_dir)
         fprintf(stdout, "Route Directory: %s\n", node->route_dir);
 }
 
-int route_check_method(route_node *node, char *method){
+int route_check_method(route_node *node, char *method)
+{
     int return_value = 0;
-    for (int i = 0; i<node->num_methods; i++){
-        if (strcmp(node->methods[i], method) == 0){
+    for (int i = 0; i < node->num_methods; i++)
+    {
+        if (strcmp(node->methods[i], method) == 0)
+        {
             return_value = 1;
         }
     }

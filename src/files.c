@@ -8,45 +8,51 @@
 // #include "stb_image.h"
 #include <sys/file.h>
 
-file_data *file_load(char *filename){
+file_data *file_load(char *filename)
+{
 
     char *buffer, *ptr;
     struct stat buf;
     long int bytes_read, bytes_remaining, total_bytes = 0;
 
     // obtain the file size of the filename passed
-    if (stat(filename, &buf) == -1){
+    if (stat(filename, &buf) == -1)
+    {
         printf("cannot load file size!\n");
         return NULL;
     }
 
     // check if the file is a regular file
-    if (!(buf.st_mode & S_IFREG)){
+    if (!(buf.st_mode & S_IFREG))
+    {
         printf("not a regular file!\n");
         return NULL;
     }
 
     // open file for reading
     FILE *fp = fopen(filename, "rb");
-    if (fp==NULL){
+    if (fp == NULL)
+    {
         printf("cannot open file!\n");
         return NULL;
     }
 
     bytes_remaining = buf.st_size;
     long size = buf.st_size;
-    buffer = (char*)malloc((bytes_remaining+1));
+    buffer = (char *)malloc((bytes_remaining + 1));
     ptr = buffer;
 
-    if (buffer == NULL){
+    if (buffer == NULL)
+    {
         return NULL;
     }
-    
+
     while (
-        bytes_read = fread(ptr, 1, bytes_remaining, fp), 
-        bytes_read != 0 && bytes_remaining > 0
-    ){
-        if (bytes_read == -1){
+        bytes_read = fread(ptr, 1, bytes_remaining, fp),
+        bytes_read != 0 && bytes_remaining > 0)
+    {
+        if (bytes_read == -1)
+        {
             free(buffer);
             buffer = NULL;
             return NULL;
@@ -60,9 +66,10 @@ file_data *file_load(char *filename){
     buffer[total_bytes] = '\0';
     fclose(fp);
 
-    file_data * filedata = (file_data*)malloc(sizeof(file_data));
+    file_data *filedata = (file_data *)malloc(sizeof(file_data));
 
-    if (filedata == NULL){
+    if (filedata == NULL)
+    {
         free(buffer);
         buffer = NULL;
         return NULL;
@@ -74,15 +81,18 @@ file_data *file_load(char *filename){
     return filedata;
 }
 
-file_data *read_image_fd(char *filename){
-    if (filename == NULL){
+file_data *read_image_fd(char *filename)
+{
+    if (filename == NULL)
+    {
         fprintf(stderr, "Please provide a valid filename.\n");
         return NULL;
     }
-    
+
     FILE *fp = fopen(filename, "rb");
 
-    if (fp == NULL){
+    if (fp == NULL)
+    {
         fprintf(stderr, "Could not open file %s.\n", filename);
         return NULL;
     }
@@ -94,12 +104,13 @@ file_data *read_image_fd(char *filename){
     fp = NULL;
 
     int fd = open(filename, O_RDONLY);
-    if (fd < 0){
+    if (fd < 0)
+    {
         fprintf(stderr, "Could not open file %s.\n", filename);
         return NULL;
     }
 
-    file_data *filedata = (file_data*)malloc(sizeof(file_data));
+    file_data *filedata = (file_data *)malloc(sizeof(file_data));
     filedata->data = &fd;
     filedata->filename = filename;
     filedata->size = size;
@@ -109,14 +120,17 @@ file_data *read_image_fd(char *filename){
     return filedata;
 }
 
-int get_image_fd(char *filename){
-    if (filename == NULL){
+int get_image_fd(char *filename)
+{
+    if (filename == NULL)
+    {
         fprintf(stderr, "Please provide a valid filename.\n");
         return -1;
     }
     int fd;
     fd = open(filename, O_RDONLY);
-    if (fd < 0){
+    if (fd < 0)
+    {
         fprintf(stderr, "Could not open file %s.\n", filename);
         return -1;
     }
@@ -129,7 +143,7 @@ int get_image_fd(char *filename){
 //         fprintf(stderr, "Please provide a valid filename.\n");
 //         return NULL;
 //     }
-    
+
 //     int height, width, channels;
 //     unsigned char *image = stbi_load(filename, &width, &height, &channels, 0);
 
@@ -151,14 +165,13 @@ int get_image_fd(char *filename){
 //     return filedata;
 // }
 
-
 // file_data *read_image(char *filename){
 
 //     if (filename == NULL){
 //         fprintf(stderr, "Please provide a valid filename.\n");
 //         return NULL;
 //     }
-    
+
 //     FILE *fp = fopen(filename, "rb");
 //     if (fp == NULL){
 //         fprintf(stderr, "Could not open file %s.\n", filename);
@@ -176,9 +189,9 @@ int get_image_fd(char *filename){
 //     if (buffer == NULL){
 //         return NULL;
 //     }
-    
+
 //     while (
-//         bytes_read = fread(ptr, 1, bytes_remaining, fp), 
+//         bytes_read = fread(ptr, 1, bytes_remaining, fp),
 //         bytes_read != 0 && bytes_remaining > 0
 //     ){
 //         if (bytes_read == -1){
@@ -194,7 +207,7 @@ int get_image_fd(char *filename){
 
 //     buffer[total_bytes] = '\0';
 //     fclose(fp);
-    
+
 //     file_data *filedata = (file_data*)malloc(sizeof(file_data));
 //     if (filedata == NULL){
 //         fprintf(stderr, "Error while allocating memory to file_data struct.\n");
@@ -215,9 +228,12 @@ int get_image_fd(char *filename){
 //     image = NULL;
 // }
 
-void file_free(file_data *filedata){
-    if (filedata == NULL) return;
-    if (filedata->data){
+void file_free(file_data *filedata)
+{
+    if (filedata == NULL)
+        return;
+    if (filedata->data)
+    {
         free(filedata->data);
     }
     free(filedata);
