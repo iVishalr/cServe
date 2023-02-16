@@ -130,6 +130,20 @@ void destroy_server(http_server *server, int print_logs){
     server = NULL;
 }   
 
+void calculate_size(long bytes, long *arr){
+    long gbs, mbs, kbs;
+    gbs = (int)(bytes / 1024 / 1024 / 1024);
+    bytes -= gbs * 1024 * 1024 * 1024;
+    mbs = (int)(bytes / 1024 / 1024);
+    bytes -= mbs * 1024 * 1024;
+    kbs = (int)(bytes / 1024);
+    bytes -= kbs * 1024;
+    arr[0] = gbs;
+    arr[1] = mbs;
+    arr[2] = kbs;
+    arr[3] = bytes;
+}
+
 void print_server_logs(http_server *server){
     fprintf(stdout, "Server Port: %d\n", server->port);
     fprintf(stdout, "Server Cache enabled (Y/n): %c\n", server->cache == NULL? 'n' : 'Y');
@@ -147,18 +161,15 @@ void print_server_logs(http_server *server){
     fprintf(stdout, "Max Request size: %ld\n", server->max_request_size);
     fprintf(stdout, "Max Response size: %ld\n", server->max_response_size);
     fprintf(stdout, "Server Backlog: %d\n", server->backlog);
+    
+    long received_bytes[4], sent_bytes[4];
+    calculate_size(server->server_logs->num_bytes_received, received_bytes);
+    calculate_size(server->server_logs->num_bytes_sent, sent_bytes);
 
-    long gbs, mbs, kbs, bytes;
-    bytes = server->server_logs->num_bytes_sent;
-    gbs = (int)(bytes / 1024 / 1024 / 1024);
-    bytes -= gbs * 1024 * 1024 * 1024;
-    mbs = (int)(bytes / 1024 / 1024);
-    bytes -= mbs * 1024 * 1024;
-    kbs = (int)(bytes / 1024);
-    bytes -= kbs * 1024;
-
+    fprintf(stdout, "Total Bytes Received: %ld\t", server->server_logs->num_bytes_received);
+    fprintf(stdout, "(%ld GB; %ld MB; %ld KB; %ld B)\n", received_bytes[0], received_bytes[1], received_bytes[2], received_bytes[3]);
     fprintf(stdout, "Total Bytes Sent: %ld\t", server->server_logs->num_bytes_sent);
-    fprintf(stdout, "(%ld GB; %ld MB; %ld KB; %ld B)\n", gbs, mbs, kbs, bytes);
+    fprintf(stdout, "(%ld GB; %ld MB; %ld KB; %ld B)\n", sent_bytes[0], sent_bytes[1], sent_bytes[2], sent_bytes[3]);
     fprintf(stdout, "Number of GET Requests Received: %d\n", server->server_logs->num_get_requests);
     fprintf(stdout, "Number of Requests Served: %d\n", server->server_logs->num_requests_served);
 }
@@ -408,12 +419,7 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
         return;
     }
 
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
     send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
-    clock_gettime(CLOCK_MONOTONIC, &end);
-
-    fprintf(stdout, "[Server:%d] Sending response took %lf ms.\n", server->port, get_time_difference(&start, &end) * 1000);
     
     if (server->cache == NULL)
         file_free(filedata);
@@ -434,6 +440,14 @@ void file_response_handler(http_server *server, int new_socket_fd, char *path){
 }
 
 void handle_http_request(http_server *server, int new_socket_fd){
+    struct timespec 
+        req_parse_start, 
+        req_parse_end,
+        search_start,
+        search_end,
+        res_start,
+        res_end
+    ;
     const long request_buffer_size = server->max_request_size;
     char *request = (char*)malloc(request_buffer_size);
     char *p;
@@ -450,6 +464,7 @@ void handle_http_request(http_server *server, int new_socket_fd){
     }
 
     request[bytes_received] = '\0';
+    clock_gettime(CLOCK_MONOTONIC, &req_parse_start);
     char *request_body = strstr(request, "\r\n\r\n");
     
     if (request_body != NULL){
@@ -476,11 +491,8 @@ void handle_http_request(http_server *server, int new_socket_fd){
     char get[] = "GET";
     char post[] = "POST";
     
-
     char *path_split = strchr(path, ' ');
     *path_split = '\0';
-    // printf("%ld\n", strlen(path));
-    // printf("%s\n", path);
 
     char *params_split = strchr(path, '?');
     char *params = NULL;
@@ -488,9 +500,6 @@ void handle_http_request(http_server *server, int new_socket_fd){
         params = params_split+1;
         *params_split = '\0';
     }
-    
-    // printf("%ld\n", strlen(path));
-    // printf("%s\n", path);
 
     path_len = strlen(path);
     char *search_path = (char*)malloc(path_len + 1);
@@ -503,27 +512,42 @@ void handle_http_request(http_server *server, int new_socket_fd){
         server->server_logs->num_get_requests += 1;
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &req_parse_end); // request parsing completed.
+
     if (strstr(search_path, ".") != NULL){
+        clock_gettime(CLOCK_MONOTONIC, &search_start);
+        clock_gettime(CLOCK_MONOTONIC, &search_end);
+
         // if request path is a resource on server and not a route, then respond with a file
         char resource_path[4096];
         sprintf(resource_path, "%s/%s", server->server_root_dir, search_path);
+        clock_gettime(CLOCK_MONOTONIC, &res_start);
         file_response_handler(server, new_socket_fd, resource_path);
+        clock_gettime(CLOCK_MONOTONIC, &res_end);
     }
     else{
+        clock_gettime(CLOCK_MONOTONIC, &search_start);
         route_node *req_route = route_search(server->route_table, search_path);
+        clock_gettime(CLOCK_MONOTONIC, &search_end);
         if (req_route == NULL || !route_check_method(req_route, search_method)){
             fprintf(stderr, "[Server:%d] 404 Page Not found!\n", server->port);
+            clock_gettime(CLOCK_MONOTONIC, &res_start);
             response_404(server, new_socket_fd);
+            clock_gettime(CLOCK_MONOTONIC, &res_end);
         }
         else if (req_route->value != NULL){
             char file_path[4096];
             sprintf(file_path, "%s/%s", server->server_root_dir, req_route->value);
+            clock_gettime(CLOCK_MONOTONIC, &res_start);
             file_response_handler(server, new_socket_fd, file_path);
+            clock_gettime(CLOCK_MONOTONIC, &res_end);
         }
         else{
             char dir_path[4096];
             sprintf(dir_path, "%s/%s", server->server_root_dir, req_route->route_dir);
+            clock_gettime(CLOCK_MONOTONIC, &res_start);
             req_route->route_fn(server, new_socket_fd, dir_path, req_route->fn_args);
+            clock_gettime(CLOCK_MONOTONIC, &res_end);
         }
     }
 
@@ -534,6 +558,13 @@ void handle_http_request(http_server *server, int new_socket_fd){
     request = NULL;
     search_path = NULL;
     search_method = NULL;
+    double request_time = get_time_difference(&req_parse_start, &req_parse_end) * 1000;
+    double search_time = get_time_difference(&search_start, &search_end) * 1000;
+    double response_time = get_time_difference(&res_start, &res_end) * 1000;
+    fprintf(stdout, "[Server:%d] Request Parsing: %lfms; Method Search: %lfms; Response: %lfms; Total Time: %lfms\n",
+        server->port, request_time, search_time, response_time, request_time+search_time+response_time
+    );
+    return;
 }
 
 void stop_server(){
@@ -572,8 +603,9 @@ void server_start(http_server *server, int close_server, int print_logs){
             if (errno == EWOULDBLOCK){
                 if (!status){
                     break;
-                }else{
-                    msleep(0.5);
+                }
+                else{
+                    msleep(1);
                     continue;
                 }
             }
