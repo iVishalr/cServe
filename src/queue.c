@@ -5,7 +5,7 @@
 
 queues *queue_create()
 {
-    queues *queue = (queues *)malloc(sizeof(queue));
+    queues *queue = (queues *)malloc(sizeof(queues));
 
     if (queue == NULL)
     {
@@ -17,6 +17,7 @@ queues *queue_create()
     queue->tail = NULL;
     queue->size = 0;
     queue->mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
+    queue->condition_var = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
     return queue;
 }
 
@@ -60,7 +61,6 @@ void *enqueue(queues *queue, void *data)
         return NULL;
     }
 
-    printf("Creating new queue node\n");
     queue_node *node = queue_create_node(data);
 
     if (node == NULL)
@@ -68,9 +68,7 @@ void *enqueue(queues *queue, void *data)
         fprintf(stderr, "Error while creating new node.\n");
         return NULL;
     }
-    printf("Entering critical section : ENQUEUE\n");
     enqueue_critical_section(queue, node);
-    printf("Done critical section : ENQUEUE\n");
     // pthread_mutex_unlock(&queue->mutex);
     return data;
 }
@@ -80,14 +78,12 @@ queue_node *dequeue_critical_section(queues *queue)
     queue_node *node = NULL;
     if (queue->head == queue->tail)
     {
-        printf("HEAD == TAIL\n");
         node = queue->head;
         queue->head = NULL;
         queue->tail = NULL;
     }
     else
     {
-        printf("HEAD != TAIL\n");
         node = queue->head;
         queue->head = node->next;
         queue->head->prev = NULL;
@@ -105,29 +101,15 @@ void *dequeue(queues *queue)
         return NULL;
     }
 
-    printf("In dequeue\n");
     void *data = NULL;
-    printf("Entering critical section : DEQUEUE\n");
     queue_node *node = dequeue_critical_section(queue);
-    printf("Done critical section : DEQUEUE\n");
 
     if (node == NULL)
     {
         return NULL;
     }
 
-    if (queue->head == NULL)
-    {
-        printf("\nHEAD == NULL\n");
-    }
-
-    if (queue->tail == NULL)
-    {
-        printf("TAIL == NULL\n");
-    }
-
     // pthread_mutex_unlock(&queue->mutex);
-
     data = node->data;
     node->prev = NULL;
     node->next = NULL;

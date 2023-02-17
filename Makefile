@@ -1,10 +1,13 @@
 CC=gcc
-CFLAGS=-O2 -I include/
+CPP=g++
+CFLAGS=-O3 -I include/ -g
 
 SRC=src
 BUILD=build
-SRCS=$(wildcard $(SRC)/*.c)
-OBJS=$(patsubst $(SRC)/%.c, $(BUILD)/%.o, $(SRCS))
+CSRCS=$(wildcard $(SRC)/*.c)
+CPPSRCS=$(wildcard $(SRC)/*.cpp)
+COBJS=$(patsubst $(SRC)/%.c, $(BUILD)/%.o, $(CSRCS))
+CPPOBJS=$(patsubst $(SRC)/%.cpp, $(BUILD)/%.o, $(CPPSRCS))
 LDFLAGS=-lm -lpthread
 
 all:
@@ -13,11 +16,14 @@ all:
   	fi
 	@$(MAKE) server
 
-server: $(OBJS)
-	$(CC) $(CFLAGS) main.c -o $@ $^ $(LDFLAGS)
+server: $(CPPOBJS) $(COBJS)
+	$(CPP) $(CFLAGS) main.c -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/%.o: $(SRC)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@ $(LDFLAGS)
+
+$(BUILD)/%.o: $(SRC)/%.cpp
+	$(CPP) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(BUILD) a.out server.out 

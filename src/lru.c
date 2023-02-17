@@ -119,6 +119,7 @@ lru *lru_create(int max_size, int hashsize)
         fprintf(stderr, "Error creating hashtable for LRU cache.\n");
         exit(1);
     }
+    lru_cache->mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
     return lru_cache;
 }
 

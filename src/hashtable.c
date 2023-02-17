@@ -24,7 +24,7 @@ int default_hash_fn(void *data, int data_size, int bucket_count)
 {
     const int R = 31;
     int hash = 0;
-    unsigned char *p = data;
+    unsigned char *p = (unsigned char *)data;
 
     for (int i = 0; i < data_size; i++)
     {
@@ -131,8 +131,8 @@ void *hashtable_put_bin(hashtable *table, char *key, void *data)
 
 int hash_entry_cmp_fn(void *a, void *b)
 {
-    ht_entry *A = a;
-    ht_entry *B = b;
+    ht_entry *A = (ht_entry *)a;
+    ht_entry *B = (ht_entry *)b;
     int size_diff = B->key_size - A->key_size;
     if (size_diff)
         return size_diff;
@@ -151,12 +151,15 @@ void *hashtable_get_bin(hashtable *table, char *key, int key_size)
     int index = table->hash_fn(key, key_size, table->size);
     list *list_ptr = table->bucket[index];
 
-    ht_entry cmp_entry;
-    cmp_entry.key = key;
-    cmp_entry.key_size = key_size;
+    ht_entry *cmp_entry = (ht_entry *)malloc(sizeof(ht_entry));
+    cmp_entry->key = key;
+    cmp_entry->key_size = key_size;
 
     ht_entry *temp = list_find(
-        list_ptr, &cmp_entry, hash_entry_cmp_fn);
+        list_ptr, cmp_entry, hash_entry_cmp_fn);
+
+    free(cmp_entry);
+    cmp_entry = NULL;
 
     if (temp == NULL)
     {

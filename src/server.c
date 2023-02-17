@@ -22,13 +22,14 @@
 #include "server.h"
 #include "picohttpparser.h"
 #include "queues.h"
+#include "cconcurrentqueue.h"
 
 #define DEFAULT_PORT "8080"
 #define DEFAULT_MAX_RESPONSE_SIZE 64 * 1024 * 1024 // 64 MB
 #define DEFAULT_SERVER_FILE_PATH "./serverfiles"
 #define DEFAULT_SERVER_ROOT "./serverroot"
 #define DEFAULT_BACKLOG 10
-#define DEFAULT_THREAD_POOL_SIZE 12
+#define DEFAULT_THREAD_POOL_SIZE 2
 
 volatile sig_atomic_t status;
 
@@ -113,9 +114,12 @@ http_server *create_server(int port, int cache_size, int hashsize, char *root_di
     server->backlog = backlog ? backlog : DEFAULT_BACKLOG;
     server->server_logs->max_cache_size = cache_size;
     server->server_logs->num_bytes_sent = 0;
+    server->server_logs->num_bytes_received = 0;
     server->server_logs->num_get_requests = 0;
     server->server_logs->num_requests_served = 0;
     server->server_logs->num_routes = 0;
+    server->server_logs->cache_hits = 0;
+    server->server_logs->cache_miss = 0;
 
     if (root_dir != NULL)
     {
@@ -195,7 +199,7 @@ void print_server_logs(http_server *server)
     fprintf(stdout, "Max Response size: %ld\n", server->max_response_size);
     fprintf(stdout, "Server Backlog: %d\n", server->backlog);
 
-    long received_bytes[4], sent_bytes[4];
+    long received_bytes[4] = {0, 0, 0, 0}, sent_bytes[4] = {0, 0, 0, 0};
     calculate_size(server->server_logs->num_bytes_received, received_bytes);
     calculate_size(server->server_logs->num_bytes_sent, sent_bytes);
 
@@ -274,16 +278,20 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
             // replace with default content type
             content_type = "text/html";
         }
+        pthread_mutex_lock(&server->cache->mutex);
         node = server_cache_resource_handler(server, key, content_type, data, content_length);
         server->server_logs->cache_miss += 1;
+        pthread_mutex_unlock(&server->cache->mutex);
         break;
     case 1:
         // retreive item from cache
+        pthread_mutex_lock(&server->cache->mutex);
         node = server_cache_retreive_handler(server, key);
         if (node)
         {
             server->server_logs->cache_hits += 1;
         }
+        pthread_mutex_unlock(&server->cache->mutex);
         break;
     default:
         fprintf(stderr, "[Server:%d] Invalid opcode=%d", server->port, opcode);
@@ -517,8 +525,6 @@ void *handle_http_request(void *arg)
     free(payload);
     payload = NULL;
 
-    printf("receiving request\n");
-
     int bytes_received = recv(new_socket_fd, request, request_buffer_size - 1, 0);
 
     if (bytes_received < 0)
@@ -562,10 +568,16 @@ void *handle_http_request(void *arg)
     char get[] = "GET";
     char post[] = "POST";
 
-    char *path_split = strchr(path, ' ');
+    if (path == NULL)
+    {
+        free(request);
+        return NULL;
+    }
+
+    char *path_split = strstr(path, " ");
     *path_split = '\0';
 
-    char *params_split = strchr(path, '?');
+    char *params_split = strstr(path, "?");
     char *params = NULL;
     if (params_split)
     {
@@ -578,7 +590,7 @@ void *handle_http_request(void *arg)
     sprintf(search_path, "%.*s", (int)path_len, path);
 
     char *search_method = (char *)malloc(method_len + 1);
-    snprintf(search_method, method_len + 1, "%s", method);
+    sprintf(search_method, "%.*s", (int)method_len, method);
 
     if (strcmp(get, search_method) == 0)
     {
@@ -631,17 +643,19 @@ void *handle_http_request(void *arg)
 
     server->server_logs->num_requests_served += 1;
     close(new_socket_fd);
-    free(search_path);
-    free(request);
-    free(search_method);
+    if (search_path)
+        free(search_path);
+    if (request)
+        free(request);
+    if (search_method)
+        free(search_method);
     request = NULL;
     search_path = NULL;
     search_method = NULL;
     double request_time = get_time_difference(&req_parse_start, &req_parse_end) * 1000;
     double search_time = get_time_difference(&search_start, &search_end) * 1000;
     double response_time = get_time_difference(&res_start, &res_end) * 1000;
-    fprintf(stdout, "[Server:%d] Request Parsing: %lfms; Method Search: %lfms; Response: %lfms; Total Time: %lfms\n",
-            server->port, request_time, search_time, response_time, request_time + search_time + response_time);
+    fprintf(stdout, "[Server:%d] Request Parsing: %lfms; Method Search: %lfms; Response: %lfms; Total Time: %lfms\n", server->port, request_time, search_time, response_time, request_time + search_time + response_time);
     return NULL;
 }
 
@@ -660,15 +674,11 @@ void *thread_function_wrapper(void *arg)
         pthread_mutex_lock(&queue->mutex);
         client_payload = (struct thread_payload *)dequeue(queue);
         pthread_mutex_unlock(&queue->mutex);
+
         if (client_payload != NULL)
-        {
-            // we have a connection queued.
             payload->fn(client_payload);
-        }
         else
-        {
-            msleep(0.5);
-        }
+            msleep(1);
     }
 }
 
@@ -707,6 +717,7 @@ void server_start(http_server *server, int close_server, int print_logs)
     struct thread_function_payload *fn_payload = (struct thread_function_payload *)malloc(sizeof(struct thread_function_payload));
     fn_payload->fn = handle_http_request;
     fn_payload->queue = queue;
+
     // setup thread pool using the DEFAULT_THREAD_POOL_SIZE
     pthread_t thread_pool[DEFAULT_THREAD_POOL_SIZE];
     for (int i = 0; i < DEFAULT_THREAD_POOL_SIZE; i++)
@@ -744,16 +755,13 @@ void server_start(http_server *server, int close_server, int print_logs)
         fprintf(stdout, "[Server:%d] Got connection from %s\n", port, s);
 
         // create thread to handle the new request
-        // handle_http_request(server, new_socket_fd);
         struct thread_payload *payload = (struct thread_payload *)malloc(sizeof(struct thread_payload));
         payload->new_socket_fd = new_socket_fd;
         payload->server = server;
 
         // enqueue the new connection to the shared queue
-        printf("Enqueing new connection\n");
         pthread_mutex_lock(&queue->mutex);
         enqueue(queue, payload);
-        printf("Enqueued! Current QUEUE SIZE=%d\n", queue->size);
         pthread_mutex_unlock(&queue->mutex);
         // pthread_t thread;
         // pthread_create(&thread, NULL, handle_http_request, payload);
@@ -769,6 +777,7 @@ void server_start(http_server *server, int close_server, int print_logs)
     // destroy queue and fn_payload
     free(fn_payload);
     fn_payload = NULL;
+    printf("Destroying queue\n");
     queue_destroy(queue);
     queue = NULL;
 
