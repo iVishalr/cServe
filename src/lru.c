@@ -9,11 +9,12 @@ cache_node *allocate_node(char *key, char *content_type, void *content, int cont
 
     if (node == NULL)
     {
+        fprintf(stderr, "Could not allocate memory to cache_node\n");
         return NULL;
     }
 
     long key_size = strlen(key);
-    node->key = (char *)malloc(key_size + 1);
+    node->key = (char *)malloc((key_size + 1));
     sprintf(node->key, "%s", key);
     node->content_type = content_type;
     node->content = content;

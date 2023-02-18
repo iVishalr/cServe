@@ -35,6 +35,7 @@ extern "C"
         long max_response_size;
         long max_request_size;
         int backlog;
+        pthread_mutex_t lock;
     } http_server;
 
     http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size, int backlog);
@@ -42,7 +43,7 @@ extern "C"
     void print_server_logs(http_server *server);
     void *handle_http_request(void *arg);
     int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length);
-    void file_response_handler(http_server *server, int new_socket_fd, char *path);
+    int file_response_handler(http_server *server, int new_socket_fd, char *path);
     void server_start(http_server *server, int close_server, int print_logs);
 #ifdef __cplusplus
 }
