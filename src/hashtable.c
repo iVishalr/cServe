@@ -151,15 +151,15 @@ void *hashtable_get_bin(hashtable *table, char *key, int key_size)
     int index = table->hash_fn(key, key_size, table->size);
     list *list_ptr = table->bucket[index];
 
-    ht_entry *cmp_entry = (ht_entry *)malloc(sizeof(ht_entry));
-    cmp_entry->key = key;
-    cmp_entry->key_size = key_size;
+    // ht_entry *cmp_entry = (ht_entry *)malloc(sizeof(ht_entry));
+    ht_entry cmp_entry;
+    cmp_entry.key = key;
+    cmp_entry.key_size = key_size;
 
-    ht_entry *temp = list_find(
-        list_ptr, cmp_entry, hash_entry_cmp_fn);
+    ht_entry *temp = list_find(list_ptr, &cmp_entry, hash_entry_cmp_fn);
 
-    free(cmp_entry);
-    cmp_entry = NULL;
+    // free(cmp_entry);
+    // cmp_entry = NULL;
 
     if (temp == NULL)
     {

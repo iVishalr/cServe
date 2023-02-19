@@ -58,7 +58,7 @@ file_data *file_load(char *filename)
             return NULL;
         }
 
-        bytes_remaining = bytes_remaining - bytes_read;
+        // bytes_remaining = bytes_remaining - bytes_read;
         ptr = ptr + bytes_read;
         total_bytes = total_bytes + bytes_read;
     }

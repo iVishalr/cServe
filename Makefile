@@ -1,6 +1,6 @@
 CC=gcc
 CPP=g++
-CFLAGS=-O3 -I include/ -g
+CFLAGS=-O3 -I include/
 
 SRC=src
 BUILD=build
@@ -16,14 +16,14 @@ all:
   	fi
 	@$(MAKE) server
 
-server: $(CPPOBJS) $(COBJS)
-	$(CPP) $(CFLAGS) main.c -o $@ $^ $(LDFLAGS)
+server: $(COBJS)
+	$(CC) $(CFLAGS) main.c -o $@ $^ $(LDFLAGS)
 
 $(BUILD)/%.o: $(SRC)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@ $(LDFLAGS)
 
-$(BUILD)/%.o: $(SRC)/%.cpp
-	$(CPP) $(CFLAGS) -c $< -o $@
+# $(BUILD)/%.o: $(SRC)/%.cpp
+# 	$(CPP) $(CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(BUILD) a.out server.out 

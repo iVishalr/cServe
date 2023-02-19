@@ -27,7 +27,7 @@ int main()
 {
     size_t method_len = 3;
     char *methods[3] = {"GET", "POST", "DELETE"};
-    http_server *server = create_server(8082, 128, 128, "static-website-example", 0, 0, 10000);
+    http_server *server = create_server(8082, 0, 0, "static-website-example", 0, 0, 100);
     register_route(server->route_table, "/", "index.html", methods, method_len, NULL, NULL, NULL);
     printf("Starting server\n");
     server_start(server, 1, 1);

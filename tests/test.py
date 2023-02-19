@@ -24,7 +24,7 @@ links = [
 ]
 
 wall_start = time.time_ns() / 1000 / 1000
-for i in range(1):
+for i in range(100):
     start = time.time_ns() / 1000 / 1000
     for j in links[::-1]:
         r = requests.get(f"http://localhost:8082{j}")

@@ -22,14 +22,14 @@
 #include "server.h"
 #include "picohttpparser.h"
 #include "queues.h"
-#include "cconcurrentqueue.h"
+// #include "cconcurrentqueue.h"
 
 #define DEFAULT_PORT "8080"
 #define DEFAULT_MAX_RESPONSE_SIZE 64 * 1024 * 1024 // 64 MB
 #define DEFAULT_SERVER_FILE_PATH "./serverfiles"
 #define DEFAULT_SERVER_ROOT "./serverroot"
 #define DEFAULT_BACKLOG 10
-#define DEFAULT_THREAD_POOL_SIZE 24
+#define DEFAULT_THREAD_POOL_SIZE 128
 
 volatile sig_atomic_t status;
 
@@ -81,7 +81,7 @@ cache_node *server_cache_resource_handler(http_server *server, char *key, char *
     }
     if (server->cache == NULL)
     {
-        fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
+        // fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
         return NULL;
     }
 
@@ -100,7 +100,7 @@ cache_node *server_cache_retreive_handler(http_server *server, char *key)
         return NULL;
     if (server->cache == NULL)
     {
-        fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
+        // fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
         return NULL;
     }
     cache_node *node = cache_get(server->cache, key);
@@ -121,7 +121,7 @@ cache_node *server_cache_manager(http_server *server, int opcode, char *key, cha
     }
     if (server->cache == NULL)
     {
-        fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
+        // fprintf(stderr, "[Server:%d] Caching is not enabled.\n", server->port);
         return NULL;
     }
     if (key == NULL)
@@ -192,7 +192,8 @@ cache_node *server_cache_retreive(http_server *server, char *key)
 int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length)
 {
     const long max_response_size = server->max_response_size;
-    char *response = (char *)malloc(sizeof(char) * max_response_size);
+    // char *response = (char *)malloc(sizeof(char) * 4096);
+    char response[4096];
     long response_length;
     long body_size = content_length;
 
@@ -211,19 +212,18 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
         response,
         response_length);
 
-    long rv = send(
+    long rv = write(
         new_socket_fd,
         body,
-        content_length,
-        0);
+        content_length);
 
     if (rv < 0)
     {
         perror("Could not send response.");
     }
     // clean up response buffers
-    free(response);
-    response = NULL;
+    // free(response);
+    // response = NULL;
     return rv + rv_header;
 }
 
@@ -324,6 +324,10 @@ int file_response_handler(http_server *server, int new_socket_fd, char *path)
         file_type = strstr(mime_type, "/");
         file_type += 1;
 
+        // pthread_mutex_lock(&server->lock);
+        // server->server_logs->cache_miss += 1;
+        // pthread_mutex_unlock(&server->lock);
+
         // printf("[Server:%d] Loading data from %s\n", server->port, path);
         filedata = file_load(path);
     }
@@ -375,7 +379,7 @@ struct thread_payload
 {
     http_server *server;
     http_server_logs *logs;
-    int new_socket_fd;
+    int *new_socket_fd;
 };
 
 void *handle_http_request(void *arg)
@@ -383,7 +387,11 @@ void *handle_http_request(void *arg)
     struct thread_payload *payload = (struct thread_payload *)arg;
     http_server *server = payload->server;
     http_server_logs *logs = payload->logs;
-    int new_socket_fd = payload->new_socket_fd;
+    int new_socket_fd = *payload->new_socket_fd;
+
+    free(payload->new_socket_fd);
+    payload->new_socket_fd = NULL;
+
     struct timespec
         req_parse_start,
         req_parse_end,
@@ -392,12 +400,9 @@ void *handle_http_request(void *arg)
         res_start,
         res_end;
 
-    const long request_buffer_size = server->max_request_size;
+    const long request_buffer_size = 4096;
     char *request = (char *)malloc(request_buffer_size);
     char *p;
-
-    free(payload);
-    payload = NULL;
 
     int bytes_received = recv(new_socket_fd, request, request_buffer_size - 1, 0);
 
@@ -420,12 +425,6 @@ void *handle_http_request(void *arg)
 
     request[bytes_received] = '\0';
     clock_gettime(CLOCK_MONOTONIC, &req_parse_start);
-    char *request_body = strstr(request, "\r\n\r\n");
-
-    if (request_body != NULL)
-    {
-        request_body += 4; // shift ptr by 4
-    }
 
     const char *method, *path;
     int pret, minor_version;
@@ -454,10 +453,10 @@ void *handle_http_request(void *arg)
         return NULL;
     }
 
-    char *path_split = strstr(path, " ");
+    char *path_split = strchr(path, ' ');
     *path_split = '\0';
 
-    char *params_split = strstr(path, "?");
+    char *params_split = strchr(path, '?');
     char *params = NULL;
     if (params_split)
     {
@@ -527,17 +526,22 @@ void *handle_http_request(void *arg)
 
     logs->num_requests_served += 1;
     logs->num_bytes_sent += bytes_sent;
-
+    shutdown(new_socket_fd, SHUT_RDWR);
     close(new_socket_fd);
+
     if (search_path)
         free(search_path);
     if (request)
         free(request);
     if (search_method)
         free(search_method);
+
+    free(payload);
+    payload = NULL;
     request = NULL;
     search_path = NULL;
     search_method = NULL;
+
     double request_time = get_time_difference(&req_parse_start, &req_parse_end) * 1000;
     double search_time = get_time_difference(&search_start, &search_end) * 1000;
     double response_time = get_time_difference(&res_start, &res_end) * 1000;
@@ -637,18 +641,14 @@ struct thread_payload *queue_manager(struct queue_manager_ctx *ctx, int opcode, 
         // enqueue the incomming request to the appropriate queue
         long queue_index = ctx_idx_gen(ctx) % ctx->num_queues;
         queues *queue_ptr = ctx->multi_queue[queue_index];
-        pthread_mutex_lock(&queue_ptr->mutex);
         payload = enqueue(queue_ptr, data);
-        pthread_mutex_unlock(&queue_ptr->mutex);
     }
     else if (opcode == 1)
     {
         // get the correct queue for the given thread's rank
         long queue_index = (int)(rank / ctx->block_dim);
         queues *queue_ptr = ctx->multi_queue[queue_index];
-        pthread_mutex_lock(&queue_ptr->mutex);
         payload = dequeue(queue_ptr);
-        pthread_mutex_unlock(&queue_ptr->mutex);
     }
     else
     {
@@ -679,7 +679,7 @@ void queue_manager_ctx_destroy(struct queue_manager_ctx *ctx)
 struct thread_function_payload
 {
     struct queue_manager_ctx *ctx;
-    // queues *queue;
+    queues *queue;
     http_server *server;
     void *(*fn)(void *);
     int rank;
@@ -690,7 +690,7 @@ void *thread_function_wrapper(void *arg)
     struct thread_function_payload *payload = (struct thread_function_payload *)arg;
     struct queue_manager_ctx *ctx = payload->ctx;
     int rank = payload->rank;
-    // queues *queue = payload->queue;
+    queues *queue = payload->queue;
     http_server *server = payload->server;
     http_server_logs *thread_logs = (http_server_logs *)malloc(sizeof(http_server_logs));
     struct thread_payload *client_payload = NULL;
@@ -718,7 +718,9 @@ void *thread_function_wrapper(void *arg)
     server->server_logs->num_get_requests += thread_logs->num_get_requests;
     server->server_logs->num_requests_served += thread_logs->num_requests_served;
     pthread_mutex_unlock(&server->lock);
+    free(payload);
     free(thread_logs);
+    payload = NULL;
     thread_logs = NULL;
 }
 
@@ -806,7 +808,7 @@ void stop_server()
 
 void server_start(http_server *server, int close_server, int print_logs)
 {
-    int new_socket_fd;
+
     int port = server->port;
     struct sockaddr_storage client_addr;
     char s[INET6_ADDRSTRLEN];
@@ -833,37 +835,41 @@ void server_start(http_server *server, int close_server, int print_logs)
     signal(SIGINT, stop_server);
 
     // setup queue for storing incoming connections
-    // queues *queue = queue_create();
-    struct queue_manager_ctx *ctx = queue_manager_ctx_initializer(DEFAULT_THREAD_POOL_SIZE, 6);
+    queues *queue = queue_create();
+    struct queue_manager_ctx *ctx = queue_manager_ctx_initializer(DEFAULT_THREAD_POOL_SIZE, 4);
     // create the default thread_function_payload arg
-    struct thread_function_payload fn_payload[DEFAULT_THREAD_POOL_SIZE];
+    // struct thread_function_payload fn_payload[DEFAULT_THREAD_POOL_SIZE];
 
     // setup thread pool using the DEFAULT_THREAD_POOL_SIZE
     pthread_t thread_pool[DEFAULT_THREAD_POOL_SIZE];
     for (int i = 0; i < DEFAULT_THREAD_POOL_SIZE; i++)
     {
-        fn_payload[i].fn = &handle_http_request;
-        fn_payload[i].ctx = ctx;
-        fn_payload[i].server = server;
-        fn_payload[i].rank = i;
-        pthread_create(&thread_pool[i], NULL, &thread_function_wrapper, &fn_payload[i]);
+        struct thread_function_payload *fn_payload = (struct thread_function_payload *)malloc(sizeof(struct thread_function_payload));
+        fn_payload->fn = handle_http_request;
+        fn_payload->ctx = ctx;
+        fn_payload->queue = queue;
+        fn_payload->server = server;
+        fn_payload->rank = i;
+        pthread_create(&thread_pool[i], NULL, thread_function_wrapper, fn_payload);
     }
 
     while (status)
     {
         socklen_t sin_size = sizeof(client_addr);
-
-        new_socket_fd = accept(server->socket_fd, (struct sockaddr *)&client_addr, &sin_size);
-        if (new_socket_fd == -1)
+        int *new_socket_fd = (int *)malloc(sizeof(int));
+        *new_socket_fd = accept(server->socket_fd, (struct sockaddr *)&client_addr, &sin_size);
+        if (*new_socket_fd == -1)
         {
             if (errno == EWOULDBLOCK)
             {
                 if (!status)
                 {
+                    free(new_socket_fd);
                     break;
                 }
                 else
                 {
+                    free(new_socket_fd);
                     msleep(0.5);
                     continue;
                 }
@@ -888,9 +894,6 @@ void server_start(http_server *server, int close_server, int print_logs)
         // pthread_mutex_lock(&queue->mutex);
         // enqueue(queue, payload);
         // pthread_mutex_unlock(&queue->mutex);
-        // pthread_t thread;
-        // pthread_create(&thread, NULL, handle_http_request, payload);
-        // payload = NULL; // payload gets freed in handle_http_request
     }
 
     // wait on all threads to complete before stopping.
@@ -903,8 +906,8 @@ void server_start(http_server *server, int close_server, int print_logs)
     // free(fn_payload);
     // fn_payload = NULL;
     // printf("Destroying queue\n");
-    // queue_destroy(queue);
-    // queue = NULL;
+    queue_destroy(queue);
+    queue = NULL;
     queue_manager_ctx_destroy(ctx);
 
     // restore socket to be blocking

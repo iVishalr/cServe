@@ -39,6 +39,7 @@ queue_node *queue_create_node(void *data)
 
 void enqueue_critical_section(queues *queue, queue_node *node)
 {
+
     if (queue->tail == NULL && queue->head == NULL)
     {
         queue->head = node;
@@ -55,7 +56,6 @@ void enqueue_critical_section(queues *queue, queue_node *node)
 
 void *enqueue(queues *queue, void *data)
 {
-    // pthread_mutex_lock(&queue->mutex);
     if (queue == NULL || data == NULL)
     {
         return NULL;
@@ -68,8 +68,9 @@ void *enqueue(queues *queue, void *data)
         fprintf(stderr, "Error while creating new node.\n");
         return NULL;
     }
+    pthread_mutex_lock(&queue->mutex);
     enqueue_critical_section(queue, node);
-    // pthread_mutex_unlock(&queue->mutex);
+    pthread_mutex_unlock(&queue->mutex);
     return data;
 }
 
@@ -102,8 +103,9 @@ void *dequeue(queues *queue)
     }
 
     void *data = NULL;
+    pthread_mutex_lock(&queue->mutex);
     queue_node *node = dequeue_critical_section(queue);
-
+    pthread_mutex_unlock(&queue->mutex);
     if (node == NULL)
     {
         return NULL;
