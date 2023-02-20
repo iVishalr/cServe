@@ -29,7 +29,8 @@
 #define DEFAULT_SERVER_FILE_PATH "./serverfiles"
 #define DEFAULT_SERVER_ROOT "./serverroot"
 #define DEFAULT_BACKLOG 10
-#define DEFAULT_THREAD_POOL_SIZE 128
+#define DEFAULT_THREAD_POOL_SIZE 1
+#define DEFAULT_BLOCK_DIM 1
 
 volatile sig_atomic_t status;
 
@@ -402,6 +403,14 @@ void *handle_http_request(void *arg)
 
     const long request_buffer_size = 4096;
     char *request = (char *)malloc(request_buffer_size);
+    if (request == NULL)
+    {
+        fprintf(stderr, "[Server:%d] Did not receive any bytes in the request.\n", server->port);
+        free(request);
+        close(new_socket_fd);
+
+        return NULL;
+    }
     char *p;
 
     int bytes_received = recv(new_socket_fd, request, request_buffer_size - 1, 0);
@@ -410,12 +419,7 @@ void *handle_http_request(void *arg)
     {
         fprintf(stderr, "[Server:%d] Did not receive any bytes in the request.\n", server->port);
         free(request);
-        return NULL;
-    }
-    else if (request == NULL)
-    {
-        fprintf(stderr, "[Server:%d] Did not receive any bytes in the request.\n", server->port);
-        free(request);
+        close(new_socket_fd);
         return NULL;
     }
     else
@@ -836,7 +840,7 @@ void server_start(http_server *server, int close_server, int print_logs)
 
     // setup queue for storing incoming connections
     queues *queue = queue_create();
-    struct queue_manager_ctx *ctx = queue_manager_ctx_initializer(DEFAULT_THREAD_POOL_SIZE, 4);
+    struct queue_manager_ctx *ctx = queue_manager_ctx_initializer(DEFAULT_THREAD_POOL_SIZE, DEFAULT_BLOCK_DIM);
     // create the default thread_function_payload arg
     // struct thread_function_payload fn_payload[DEFAULT_THREAD_POOL_SIZE];
 

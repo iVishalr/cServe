@@ -77,6 +77,10 @@ void *enqueue(queues *queue, void *data)
 queue_node *dequeue_critical_section(queues *queue)
 {
     queue_node *node = NULL;
+    if (queue->head == NULL)
+    {
+        return NULL;
+    }
     if (queue->head == queue->tail)
     {
         node = queue->head;
@@ -95,9 +99,7 @@ queue_node *dequeue_critical_section(queues *queue)
 
 void *dequeue(queues *queue)
 {
-    // pthread_mutex_lock(&queue->mutex);
-
-    if (queue == NULL || queue->head == NULL)
+    if (queue == NULL)
     {
         return NULL;
     }
@@ -111,7 +113,6 @@ void *dequeue(queues *queue)
         return NULL;
     }
 
-    // pthread_mutex_unlock(&queue->mutex);
     data = node->data;
     node->prev = NULL;
     node->next = NULL;
