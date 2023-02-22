@@ -37,7 +37,7 @@ Once compiled, the server can be started by simply `./server` command.
 
 ## cServe Documentation
 
-Please refer to [Documentation](./doc/documentation.md) for more details on how to use cServe to serve static content.
+Please refer to [Documentation](./doc/DOCUMENTATION.md) for more details on how to use cServe to serve static content.
 
 ## Sample Code
 
