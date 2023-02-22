@@ -1,7 +1,10 @@
 <p align="center">
-<span style="font-size:100px">cServe</span>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./doc/images/logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./doc/images/logo-light.png">
+  <img alt="cServe Logo" src="./doc/images/logo-light.png">
+</picture>
 </p>
-
 <hr/>
 
 A minimal yet capable multithreaded HTTP server that can be used for serving static pages on internet. cServe is written from scratch in C language and uses minimal dependencies. cServe uses multithreading to handle many concurrent connections efficiently.

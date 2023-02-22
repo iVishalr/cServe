@@ -1,6 +1,12 @@
 <p align="center">
-<span style="font-size:100px">cServe</span>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./images/logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./images/logo-light.png">
+  <img alt="cServe Logo" src="./doc/images/logo-light.png">
+</picture>
 </p>
+
+<hr>
 
 cServe is a minimal multithreaded HTTP server that can be used to serve static content. Currently, cServer supports only GET requests and there is no support for other methods. This document provides additional details on how you can use cServe to serve your static files on internet.
 
