@@ -3,7 +3,6 @@
 
 #include "lru.h"
 #include "routes.h"
-#include <signal.h>
 
 #define HEADER_OK "HTTP/1.1 200 OK"
 #define HEADER_404 "HTTP/1.1 404 NOT FOUND"
@@ -39,12 +38,16 @@ extern "C"
     } http_server;
 
     http_server *create_server(int port, int cache_size, int hashsize, char *root_dir, long max_request_size, long max_response_size, int backlog);
+    void server_start(http_server *server, int close_server, int print_logs);
     void destroy_server(http_server *server, int print_logs);
     void print_server_logs(http_server *server);
+
+    void server_route(http_server *server, const char *key, const char *value, char **methods, size_t method_len, const char *route_dir, void (*route_fn)(void *, int, const char *, void *), void *fn_args);
     void *handle_http_request(void *arg);
     int send_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *body, size_t content_length);
     int file_response_handler(http_server *server, int new_socket_fd, char *path);
-    void server_start(http_server *server, int close_server, int print_logs);
+    cache_node *server_cache_retreive(http_server *server, char *key);
+    void server_cache_resource(http_server *server, char *key, char *content_type, void *data, size_t content_length);
 #ifdef __cplusplus
 }
 #endif

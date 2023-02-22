@@ -24,7 +24,7 @@ extern "C"
     } route_map;
 
     route_map *route_create();
-    void *register_route(route_map *map, const char *key, const char *value, char **methods, size_t method_len, const char *route_dir, void (*route_fn)(void *, int, const char *, void *), void *fn_args);
+    void register_route(route_map *map, const char *key, const char *value, char **methods, size_t method_len, const char *route_dir, void (*route_fn)(void *, int, const char *, void *), void *fn_args);
     route_node *route_search(route_map *map, const char *key);
     void *route_delete(route_map *map, const char *key);
     void route_inorder_traversal(route_map *map);

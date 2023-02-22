@@ -1,14 +1,18 @@
 CC=gcc
 CPP=g++
-CFLAGS=-O3 -I include/
+CFLAGS=-O2 -I include/ -fPIC
 
 SRC=src
 BUILD=build
+INCLUDE=include
 CSRCS=$(wildcard $(SRC)/*.c)
-CPPSRCS=$(wildcard $(SRC)/*.cpp)
-COBJS=$(patsubst $(SRC)/%.c, $(BUILD)/%.o, $(CSRCS))
-CPPOBJS=$(patsubst $(SRC)/%.cpp, $(BUILD)/%.o, $(CPPSRCS))
+OBJS=$(patsubst $(SRC)/%.c, $(BUILD)/%.o, $(CSRCS))
 LDFLAGS=-lm -lpthread
+LIBRARY=/usr/local/lib
+HEADERS=/usr/local/include 
+LDNAME=libcserve.so
+LDNAME_VERSION=libcserve.so.0.1.0
+LD_NAME_MAJOR=libcserve.so.0
 
 all:
 	@if ! test -d $(BUILD); \
@@ -16,14 +20,11 @@ all:
   	fi
 	@$(MAKE) server
 
-server: $(COBJS)
-	$(CC) $(CFLAGS) main.c -o $@ $^ $(LDFLAGS)
+server: $(OBJS)
+	$(CC) $(LDFLAGS) -o $(LDNAME) $(OBJS) -shared
 
 $(BUILD)/%.o: $(SRC)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@ $(LDFLAGS)
 
-# $(BUILD)/%.o: $(SRC)/%.cpp
-# 	$(CPP) $(CFLAGS) -c $< -o $@
-
 clean:
-	rm -rf $(BUILD) a.out server.out 
+	rm -rf $(BUILD) a.out server libcserve.so

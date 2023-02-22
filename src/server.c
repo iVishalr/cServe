@@ -19,18 +19,18 @@
 #include "files.h"
 #include "mime.h"
 #include "lru.h"
+#include "routes.h"
 #include "server.h"
 #include "picohttpparser.h"
 #include "queues.h"
-// #include "cconcurrentqueue.h"
 
 #define DEFAULT_PORT "8080"
 #define DEFAULT_MAX_RESPONSE_SIZE 64 * 1024 * 1024 // 64 MB
 #define DEFAULT_SERVER_FILE_PATH "./serverfiles"
 #define DEFAULT_SERVER_ROOT "./serverroot"
 #define DEFAULT_BACKLOG 10
-#define DEFAULT_THREAD_POOL_SIZE 1
-#define DEFAULT_BLOCK_DIM 1
+#define DEFAULT_THREAD_POOL_SIZE 12
+#define DEFAULT_BLOCK_DIM 2
 
 volatile sig_atomic_t status;
 
@@ -72,6 +72,16 @@ void calculate_size(long bytes, long *arr)
     arr[1] = mbs;
     arr[2] = kbs;
     arr[3] = bytes;
+}
+
+void server_route(http_server *server, const char *key, const char *value, char **methods, size_t method_len, const char *route_dir, void (*route_fn)(void *, int, const char *, void *), void *fn_args)
+{
+    if (server == NULL)
+    {
+        fprintf(stderr, "Server object not created.\n");
+        return;
+    }
+    register_route(server->route_table, key, value, methods, method_len, route_dir, route_fn, fn_args);
 }
 
 cache_node *server_cache_resource_handler(http_server *server, char *key, char *content_type, void *data, size_t content_length)
@@ -213,10 +223,10 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
         response,
         response_length);
 
-    long rv = write(
+    long rv = send(
         new_socket_fd,
         body,
-        content_length);
+        content_length, 0);
 
     if (rv < 0)
     {
@@ -228,13 +238,13 @@ int send_http_response(http_server *server, int new_socket_fd, char *header, cha
     return rv + rv_header;
 }
 
-int send_stream_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, int fd, size_t content_length)
+int send_stream_http_response(http_server *server, int new_socket_fd, char *header, char *content_type, int *fd_ptr, size_t content_length)
 {
-    const long max_response_size = server->max_response_size;
+    const long max_response_size = 4096;
     char *response = (char *)malloc(sizeof(char) * max_response_size);
     long response_length;
     long body_size = content_length;
-
+    int fd = *fd_ptr;
     sprintf(
         response,
         "%s\n"
@@ -252,7 +262,7 @@ int send_stream_http_response(http_server *server, int new_socket_fd, char *head
         response_length);
 
     int loc = lseek(fd, 0, SEEK_SET);
-    long img_bytes = sendfile(new_socket_fd, fd, NULL, content_length);
+    long bytes = sendfile(new_socket_fd, fd, NULL, content_length);
 
     if (rv < 0)
     {
@@ -261,7 +271,7 @@ int send_stream_http_response(http_server *server, int new_socket_fd, char *head
     // clean up response buffers
     free(response);
     response = NULL;
-    return rv + img_bytes;
+    return rv + bytes;
 }
 
 int send_image_response(http_server *server, int new_socket_fd, char *header, char *content_type, char *data, size_t content_length)
@@ -322,7 +332,7 @@ int file_response_handler(http_server *server, int new_socket_fd, char *path)
     if (node == NULL)
     {
         mime_type = mime_type_get(path);
-        file_type = strstr(mime_type, "/");
+        file_type = strchr(mime_type, '/');
         file_type += 1;
 
         // pthread_mutex_lock(&server->lock);
@@ -331,6 +341,7 @@ int file_response_handler(http_server *server, int new_socket_fd, char *path)
 
         // printf("[Server:%d] Loading data from %s\n", server->port, path);
         filedata = file_load(path);
+        // filedata = read_file_fd(path);
     }
     else
     {
@@ -340,7 +351,7 @@ int file_response_handler(http_server *server, int new_socket_fd, char *path)
         filedata->size = node->content_length;
         filedata->filename = node->key;
         mime_type = mime_type_get(filedata->filename);
-        file_type = strstr(mime_type, "/");
+        file_type = strchr(mime_type, '/');
         file_type += 1;
         cached = 1;
     }
@@ -355,6 +366,7 @@ int file_response_handler(http_server *server, int new_socket_fd, char *path)
     }
 
     bytes_sent = send_http_response(server, new_socket_fd, HEADER_OK, mime_type, filedata->data, filedata->size);
+    // bytes_sent = send_stream_http_response(server, new_socket_fd, HEADER_OK, mime_type, (int *)filedata->data, filedata->size);
 
     if (server->cache == NULL)
         file_free(filedata);
@@ -380,7 +392,7 @@ struct thread_payload
 {
     http_server *server;
     http_server_logs *logs;
-    int *new_socket_fd;
+    int new_socket_fd;
 };
 
 void *handle_http_request(void *arg)
@@ -388,10 +400,7 @@ void *handle_http_request(void *arg)
     struct thread_payload *payload = (struct thread_payload *)arg;
     http_server *server = payload->server;
     http_server_logs *logs = payload->logs;
-    int new_socket_fd = *payload->new_socket_fd;
-
-    free(payload->new_socket_fd);
-    payload->new_socket_fd = NULL;
+    int new_socket_fd = payload->new_socket_fd;
 
     struct timespec
         req_parse_start,
@@ -407,8 +416,8 @@ void *handle_http_request(void *arg)
     {
         fprintf(stderr, "[Server:%d] Did not receive any bytes in the request.\n", server->port);
         free(request);
+        shutdown(new_socket_fd, SHUT_RDWR);
         close(new_socket_fd);
-
         return NULL;
     }
     char *p;
@@ -419,6 +428,7 @@ void *handle_http_request(void *arg)
     {
         fprintf(stderr, "[Server:%d] Did not receive any bytes in the request.\n", server->port);
         free(request);
+        shutdown(new_socket_fd, SHUT_RDWR);
         close(new_socket_fd);
         return NULL;
     }
@@ -444,6 +454,8 @@ void *handle_http_request(void *arg)
     {
         fprintf(stderr, "[Server:%d] Could not parse the headers in the request.\n", server->port);
         free(request);
+        shutdown(new_socket_fd, SHUT_RDWR);
+        close(new_socket_fd);
         return NULL;
     }
     // now we have parsed the request obtained.
@@ -454,6 +466,8 @@ void *handle_http_request(void *arg)
     if (path == NULL)
     {
         free(request);
+        shutdown(new_socket_fd, SHUT_RDWR);
+        close(new_socket_fd);
         return NULL;
     }
 
@@ -713,7 +727,7 @@ void *thread_function_wrapper(void *arg)
             payload->fn(client_payload);
         }
         else
-            msleep(1);
+            msleep(0.5);
     }
 
     pthread_mutex_lock(&server->lock);
@@ -860,20 +874,20 @@ void server_start(http_server *server, int close_server, int print_logs)
     while (status)
     {
         socklen_t sin_size = sizeof(client_addr);
-        int *new_socket_fd = (int *)malloc(sizeof(int));
-        *new_socket_fd = accept(server->socket_fd, (struct sockaddr *)&client_addr, &sin_size);
-        if (*new_socket_fd == -1)
+        int new_socket_fd;
+        new_socket_fd = accept(server->socket_fd, (struct sockaddr *)&client_addr, &sin_size);
+        if (new_socket_fd == -1)
         {
             if (errno == EWOULDBLOCK)
             {
                 if (!status)
                 {
-                    free(new_socket_fd);
+                    // free(new_socket_fd);
                     break;
                 }
                 else
                 {
-                    free(new_socket_fd);
+                    // free(new_socket_fd);
                     msleep(0.5);
                     continue;
                 }

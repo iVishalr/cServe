@@ -81,7 +81,7 @@ file_data *file_load(char *filename)
     return filedata;
 }
 
-file_data *read_image_fd(char *filename)
+file_data *read_file_fd(char *filename)
 {
     if (filename == NULL)
     {
@@ -103,7 +103,8 @@ file_data *read_image_fd(char *filename)
     fclose(fp);
     fp = NULL;
 
-    int fd = open(filename, O_RDONLY);
+    int *fd = (int *)malloc(sizeof(int));
+    *fd = open(filename, O_RDONLY);
     if (fd < 0)
     {
         fprintf(stderr, "Could not open file %s.\n", filename);
@@ -111,7 +112,7 @@ file_data *read_image_fd(char *filename)
     }
 
     file_data *filedata = (file_data *)malloc(sizeof(file_data));
-    filedata->data = &fd;
+    filedata->data = fd;
     filedata->filename = filename;
     filedata->size = size;
 
@@ -120,7 +121,7 @@ file_data *read_image_fd(char *filename)
     return filedata;
 }
 
-int get_image_fd(char *filename)
+int get_file_fd(char *filename)
 {
     if (filename == NULL)
     {

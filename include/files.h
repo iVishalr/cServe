@@ -13,8 +13,9 @@ extern "C"
     } file_data;
     file_data *file_load(char *filename);
     void file_free(file_data *filedata);
-    int get_image_fd(char *filename);
-    file_data *read_image(char *filename);
+    int get_file_fd(char *filename);
+    file_data *read_file_fd(char *filename);
+    // file_data *read_image(char *filename);
 #ifdef __cplusplus
 }
 #endif

@@ -68,7 +68,7 @@ route_node *register_route_handler(route_node *root, const char *key, const char
     return root;
 }
 
-void *register_route(route_map *map, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args)
+void register_route(route_map *map, const char *key, const char *value, char **methods, size_t num_methods, const char *route_dir, void (*route_fn)(void *server, int new_socket_fd, const char *path, void *args), void *fn_args)
 {
     route_node *root = map->map;
     if (root == NULL)

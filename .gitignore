@@ -3,7 +3,8 @@ server
 *.html
 static-website-example
 static
-
+plot_graphs.py
+# doc/images/
 # Prerequisites
 *.d
 
