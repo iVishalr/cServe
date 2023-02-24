@@ -68,7 +68,7 @@ void server_route(http_server *server, const char *key, const char *value, char 
 
 `method_len` - Number of methods supported by the route.
 
-`route_dir` - Pass a folder name to this argument if you want to isolate the route to a certain directory in server's directory. If you want access to all files, pass NULL. Note that this argument will be used only when you are working with custom functions.
+`route_dir` - Pass a folder name to this argument if you want to isolate the route to a certain directory in server's directory. If you want access to all files in server's directory, pass `/`. Note that this argument will be used only when you are working with custom functions.
 
 `*route_fn` - Pass your custom defined function to this argument. cServe will internally call this function to handle requests.
 
@@ -80,7 +80,7 @@ _Example_:
 
 ```C
 server_route(server, "/", "index.html", methods, method_len, NULL, NULL, NULL);
-server_route(server, "/about", NULL, methods, method_len, NULL, custom_fn, NULL);
+server_route(server, "/about", NULL, methods, method_len, "/", custom_fn, NULL);
 ```
 
 ### Start listening for connections
@@ -337,7 +337,7 @@ int main()
     char *methods[1] = {"GET"};
     http_server *server = create_server(8080, 0, 0, "static-website-example", 0, 0, 1000);
     server_route(server, "/", "index.html", methods, method_len, NULL, NULL, NULL);
-    server_route(server, "/about", NULL, methods, method_len, NULL, custom_fn, NULL);
+    server_route(server, "/about", NULL, methods, method_len, "/", custom_fn, NULL);
     printf("Starting server\n");
     server_start(server, 1, 1);
     return 0;
@@ -359,7 +359,7 @@ To run the server,
 ```
 
 ```console
-server listening on port 8082...
+server listening on port 8080...
 Added Route - / with value index.html
 Added Route - /about with value (null)
 Starting server

@@ -29,7 +29,7 @@ int main()
     char *methods[1] = {"GET"};
     http_server *server = create_server(8080, 0, 0, "static-website-example", 0, 0, 1000);
     server_route(server, "/", "index.html", methods, method_len, NULL, NULL, NULL);
-    server_route(server, "/about", "bio.html", methods, method_len, NULL, NULL, NULL);
+    server_route(server, "/about", NULL, methods, method_len, "/", custom_fn, NULL);
     printf("Starting server\n");
     server_start(server, 1, 1);
     return 0;
